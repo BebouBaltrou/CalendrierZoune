@@ -9,3 +9,10 @@ build/
 dist/
 *.spec.bak
 *.spec
+
+# Données et fichiers produits (jamais dans le dépôt)
+*.db
+*.db-journal
+*.sqlite
+*.log
+*.zip
