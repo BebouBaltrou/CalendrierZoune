@@ -227,6 +227,8 @@ TEXTES = {
         "legende_postit_publie": "Post publié",
         "post_champ_heure": "Heure",
         "post_avec_heure": "À une heure précise",
+        "a_propos": "À propos de Musée Zoune",
+        "a_propos_texte": "Musée Zoune — version {version}\n\nProgrammation récupérée sur www.blmk.de.\n\nVos données : {donnees}",
         # Dates
         "mois": "janvier février mars avril mai juin juillet août septembre octobre novembre décembre",
         "jours_courts": "lun. mar. mer. jeu. ven. sam. dim.",
@@ -436,6 +438,8 @@ TEXTES = {
         "legende_postit_publie": "Post veröffentlicht",
         "post_champ_heure": "Uhrzeit",
         "post_avec_heure": "Zu einer bestimmten Uhrzeit",
+        "a_propos": "Über Musée Zoune",
+        "a_propos_texte": "Musée Zoune – Version {version}\n\nProgramm von www.blmk.de.\n\nIhre Daten: {donnees}",
         "mois": "Januar Februar März April Mai Juni Juli August September Oktober November Dezember",
         "jours_courts": "Mo. Di. Mi. Do. Fr. Sa. So.",
         "format_date": "{jour_sem} {j}. {mois}",

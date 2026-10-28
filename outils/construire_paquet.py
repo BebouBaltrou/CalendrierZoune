@@ -10,6 +10,7 @@ Contenu du zip :
 """
 
 import importlib.metadata as md
+import json
 import shutil
 import subprocess
 import sys
@@ -136,8 +137,137 @@ def copier_source(dossier: Path) -> None:
         z.extractall(dossier)
 
 
+MISE_A_JOUR = """MUSÉE ZOUNE — MISE À JOUR {ancienne} → {version}
+==============================================
+
+FRANÇAIS
+--------
+Cette mise à jour s'installe sur la version {ancienne} déjà installée.
+1. Fermez Musée Zoune.
+2. Dézippez ce fichier.
+3. Copiez le fichier « Musee Zoune.exe » (dossier « Musee Zoune » de ce zip) dans votre
+   dossier « Musee Zoune » existant, à la place de l'ancien : choisissez
+   « Remplacer le fichier dans la destination ».
+4. Relancez Musée Zoune. Menu « ⋯ » > « À propos » affiche la version {version}.
+Vos données (%LOCALAPPDATA%\\MuseeZoune) ne sont pas modifiées.
+Si Windows affiche « Windows a protégé votre ordinateur » : « Informations complémentaires »,
+puis « Exécuter quand même ».
+
+DEUTSCH
+-------
+Dieses Update wird auf die bereits installierte Version {ancienne} angewendet.
+1. Musée Zoune schließen.
+2. Diese Datei entpacken.
+3. Die Datei „Musee Zoune.exe“ (Ordner „Musee Zoune“ in diesem ZIP) in Ihren vorhandenen
+   Ordner „Musee Zoune“ kopieren und „Datei im Ziel ersetzen“ wählen.
+4. Musée Zoune neu starten. Menü „⋯“ > „Über Musée Zoune“ zeigt die Version {version}.
+Ihre Daten (%LOCALAPPDATA%\\MuseeZoune) bleiben unverändert.
+Falls Windows „Der Computer wurde durch Windows geschützt“ anzeigt: „Weitere Informationen“,
+dann „Trotzdem ausführen“.
+
+Le code source complet est dans le dossier « source » (licence AGPL de PyMuPDF).
+Der vollständige Quellcode liegt im Ordner „source“ (AGPL-Lizenz von PyMuPDF).
+"""
+
+VERSIONS = RACINE / "versions"  # empreintes des versions publiées (suivi par git)
+
+
+def _empreinte(donnees: bytes) -> str:
+    import hashlib
+    return hashlib.sha256(donnees).hexdigest()
+
+
+def manifeste_dossier(dossier: Path) -> dict[str, str]:
+    """{chemin relatif : sha256} de tous les fichiers de l'application."""
+    return {f.relative_to(dossier).as_posix(): _empreinte(f.read_bytes())
+            for f in sorted(dossier.rglob("*")) if f.is_file()}
+
+
+def manifeste_zip(chemin_zip: Path) -> dict[str, str]:
+    """Empreinte d'une version à partir de son zip complet déjà distribué."""
+    resultat = {}
+    with zipfile.ZipFile(chemin_zip) as z:
+        for nom in z.namelist():
+            morceaux = nom.split("/", 2)
+            if len(morceaux) == 3 and morceaux[1] == "Musee Zoune" and not nom.endswith("/"):
+                resultat[morceaux[2]] = _empreinte(z.read(nom))
+    return resultat
+
+
+def manifeste_version(version: str) -> dict[str, str] | None:
+    fichier = VERSIONS / f"MuseeZoune-{version}.json"
+    if fichier.exists():
+        return json.loads(fichier.read_text(encoding="utf-8"))
+    zip_complet = DIST / f"MuseeZoune-{version}-windows.zip"
+    if zip_complet.exists():
+        manifeste = manifeste_zip(zip_complet)
+        enregistrer_manifeste(version, manifeste)
+        return manifeste
+    return None
+
+
+def enregistrer_manifeste(version: str, manifeste: dict[str, str]) -> None:
+    VERSIONS.mkdir(exist_ok=True)
+    (VERSIONS / f"MuseeZoune-{version}.json").write_text(
+        json.dumps(manifeste, indent=1, sort_keys=True), encoding="utf-8")
+
+
+def comparer(ancien: dict[str, str], nouveau: dict[str, str]) -> tuple[list[str], list[str]]:
+    """(fichiers modifiés ou ajoutés, fichiers modifiés hors de l'exe)."""
+    changes = [f for f, h in nouveau.items() if ancien.get(f) != h]
+    return changes, [f for f in changes if f != "Musee Zoune.exe"]
+
+
+def paquet_mise_a_jour(application: Path, ancienne: str, forcer: bool = False) -> Path | None:
+    ancien = manifeste_version(ancienne)
+    if ancien is None:
+        print(f"!! Empreinte de la version {ancienne} introuvable : pas de paquet de mise à jour.")
+        return None
+    changes, autres = comparer(ancien, manifeste_dossier(application))
+    if autres and not forcer:
+        print(f"!! Les bibliothèques ont changé depuis la {ancienne} ({len(autres)} fichier(s), ex. "
+              f"{', '.join(autres[:5])}).\n   Une simple mise à jour ne suffit pas : envoyez le zip complet.")
+        return None
+    nom = f"MuseeZoune-{VERSION}-maj-depuis-{ancienne}"
+    dossier = DIST / nom
+    shutil.rmtree(dossier, ignore_errors=True)
+    for fichier in changes:
+        cible = dossier / "Musee Zoune" / fichier
+        cible.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(application / fichier, cible)
+    (dossier / "MISE_A_JOUR.txt").write_text(
+        MISE_A_JOUR.format(version=VERSION, ancienne=ancienne).replace("\n", "\r\n"), encoding="utf-8-sig")
+    copier_source(dossier / "source")
+    return zipper(dossier, DIST / f"{nom}.zip", nom)
+
+
+def zipper(dossier: Path, zip_final: Path, racine: str) -> Path:
+    zip_final.unlink(missing_ok=True)
+    with zipfile.ZipFile(zip_final, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for fichier in sorted(dossier.rglob("*")):
+            if fichier.is_file():
+                z.write(fichier, Path(racine) / fichier.relative_to(dossier))
+    print(f"{zip_final} : {zip_final.stat().st_size / 1048576:.1f} Mo")
+    return zip_final
+
+
 def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="Construit les zips de Musée Zoune.")
+    parser.add_argument("--depuis", help="version précédente pour le paquet de mise à jour (ex. 1.0)")
+    parser.add_argument("--forcer", action="store_true",
+                        help="créer la mise à jour même si les bibliothèques ont changé")
+    parser.add_argument("--maj-seulement", action="store_true",
+                        help="ne pas produire le zip complet, seulement la mise à jour")
+    args = parser.parse_args()
+    if args.depuis:
+        manifeste_version(args.depuis)  # à calculer AVANT de reconstruire (zip de l'ancienne version)
+
     application = construire_exe()
+    enregistrer_manifeste(VERSION, manifeste_dossier(application))
+    if args.depuis and args.maj_seulement:
+        paquet_mise_a_jour(application, args.depuis, args.forcer)
+        return
     paquet = DIST / NOM
     shutil.rmtree(paquet, ignore_errors=True)
     paquet.mkdir(parents=True)
@@ -146,13 +276,9 @@ def main() -> None:
                                          encoding="utf-8-sig")
     copier_licences(paquet / "licences")
     copier_source(paquet / "source")
-    zip_final = DIST / f"{NOM}.zip"
-    zip_final.unlink(missing_ok=True)
-    with zipfile.ZipFile(zip_final, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        for fichier in sorted(paquet.rglob("*")):
-            if fichier.is_file():
-                z.write(fichier, Path(NOM) / fichier.relative_to(paquet))
-    print(f"{zip_final} : {zip_final.stat().st_size / 1048576:.0f} Mo")
+    zipper(paquet, DIST / f"{NOM}.zip", NOM)
+    if args.depuis:
+        paquet_mise_a_jour(application, args.depuis, args.forcer)
 
 
 if __name__ == "__main__":

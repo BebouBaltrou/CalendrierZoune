@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-VERSION = "1.0"
+VERSION = "1.1"
 RACINE = Path(__file__).resolve().parent.parent
 
 

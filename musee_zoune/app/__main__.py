@@ -63,7 +63,7 @@ def _autotest(app: QApplication, fenetre: FenetrePrincipale, rapport: Path) -> N
 
     from PySide6.QtCore import QTimer
 
-    resultat: dict = {"donnees": str(config.DOSSIER_DONNEES)}
+    resultat: dict = {"version": config.VERSION, "donnees": str(config.DOSSIER_DONNEES)}
 
     def etape_finale():
         try:
@@ -73,6 +73,11 @@ def _autotest(app: QApplication, fenetre: FenetrePrincipale, rapport: Path) -> N
             from .export_pdf import exporter
             resultat["evenements"] = fenetre.conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             resultat["sync_runs"] = fenetre.conn.execute("SELECT COUNT(*) FROM sync_runs").fetchone()[0]
+            resultat["posts"] = fenetre.conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+            resultat["vie_perso"] = fenetre.conn.execute("SELECT COUNT(*) FROM vie_perso").fetchone()[0]
+            fenetre.aller_a(date.today(), vue=0)
+            resultat["posts_dans_le_calendrier"] = sum(
+                1 for e in fenetre.vue_mois.elements if getattr(e, "nature", "") == "post")
             dossier = rapport.parent
             photo = dossier / "autotest.jpg"
             Image.new("RGB", (4000, 3000), (40, 120, 200)).save(photo, quality=95)

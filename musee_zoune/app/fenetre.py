@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QStackedWidget, QSystemTrayIcon, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
-from .. import db, textes
+from .. import config, db, textes
 from .. import theme as th_mod
 from ..sync import derniere_sync, lancer_sync, sync_necessaire
 from ..textes import date_lisible, nom_mois, t
@@ -291,6 +291,8 @@ class FenetrePrincipale(QMainWindow):
         self.menu_plus.addSeparator()
         self.act_compression = self.menu_plus.addAction("", self._compression)
         self.act_export = self.menu_plus.addAction("", self._export_pdf)
+        self.menu_plus.addSeparator()
+        self.act_a_propos = self.menu_plus.addAction("", self._a_propos)
         self.btn_plus.setMenu(self.menu_plus)
 
         self.btn_langue = QToolButton()
@@ -304,7 +306,7 @@ class FenetrePrincipale(QMainWindow):
             b.addWidget(w)
 
     def retraduire(self) -> None:
-        self.setWindowTitle(t("app_titre"))
+        self.setWindowTitle(f"{t('app_titre')} {config.VERSION}")
         self.nom_app.setText(t("app_nom"))
         self.btn_auj.setText(t("nav_aujourdhui"))
         self.btn_menu.setToolTip(t("masquer_menu"))
@@ -324,6 +326,7 @@ class FenetrePrincipale(QMainWindow):
         self.act_perso.setText(t("perso_gerer"))
         self.act_compression.setText(t("comp_menu"))
         self.act_export.setText(t("export_menu"))
+        self.act_a_propos.setText(t("a_propos"))
         self.act_fab_perso.setText(t("fab_perso"))
         self.act_fab_post.setText(t("fab_post"))
         self.fab.setToolTip(t("fab_aide"))
@@ -518,6 +521,11 @@ class FenetrePrincipale(QMainWindow):
     def _compression(self) -> None:
         from .outils import DialogueCompression
         DialogueCompression(self).exec()
+
+    def _a_propos(self) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.about(self, t("a_propos"), t("a_propos_texte", version=config.VERSION,
+                                                     donnees=config.DOSSIER_DONNEES))
 
     def _export_pdf(self) -> None:
         from .outils import DialogueExport
