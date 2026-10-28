@@ -91,3 +91,16 @@ Un post peut couvrir zéro, un ou plusieurs événements (table `post_events`). 
 les événements concernés (avec recherche) ; sans case cochée, c'est un post « libre », affiché en
 pointillés à sa date dans le calendrier. Un événement n'est couvert que s'il est explicitement coché :
 un post sur une exposition ne couvre pas ses visites. Les anciennes bases sont migrées automatiquement.
+
+## Version à envoyer (exécutable Windows)
+
+```powershell
+.venv\Scripts\pip install pyinstaller
+.venv\Scripts\python outils\construire_paquet.py
+```
+
+Produit `dist/MuseeZoune-1.0-windows.zip` : l'application (aucun Python à installer), un LISEZMOI
+FR/DE, le code source (`source/`, exigé par la licence AGPL de PyMuPDF) et les licences des
+bibliothèques. Dans la version installée, les données sont dans `%LOCALAPPDATA%\MuseeZoune`
+(base vide au départ, remplie par la première synchronisation). La version de développement
+(`lancer.bat`) garde ses données dans `data/`.

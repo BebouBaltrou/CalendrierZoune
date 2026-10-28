@@ -240,6 +240,7 @@ class BarreLaterale(QWidget):
         self.s_perso = Section("")
         self.s_posts = Section("")
         contenu = QWidget()
+        self._contenu = contenu
         pile = QVBoxLayout(contenu)
         pile.setContentsMargins(0, 0, 0, 0)
         pile.setSpacing(2)
@@ -316,6 +317,13 @@ class BarreLaterale(QWidget):
         for etat, cle in ((None, "legende_sans_post"), ("prevu", "legende_post_prevu"),
                           ("publie", "legende_post_publie")):
             self.s_posts.ajouter(_LegendeIndicateur(etat, t(cle)))
+        # recalcule tout de suite la hauteur des sections reconstruites
+        for section in (self.s_expos, self.s_types, self.s_lieux, self.s_perso, self.s_posts):
+            section.lignes.activate()
+            section.contenu.adjustSize()
+            section.adjustSize()
+        self._contenu.layout().activate()
+        self._contenu.adjustSize()
 
     def _basculer(self, ensemble: set, cle: str, coche: bool) -> None:
         (ensemble.discard if coche else ensemble.add)(cle)
