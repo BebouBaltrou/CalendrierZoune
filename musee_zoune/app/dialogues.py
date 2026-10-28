@@ -8,7 +8,7 @@ from PySide6.QtCore import QDate, QDateTime, QTime, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDateEdit, QDateTimeEdit, QDialog, QLabel, QDialogButtonBox, QFormLayout, QHBoxLayout,
-    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QTextEdit, QVBoxLayout,
+    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QTextEdit, QTimeEdit, QVBoxLayout,
 )
 
 from .. import calendrier as cal
@@ -211,6 +211,11 @@ class DialoguePost(QDialog):
         self.date = QDateEdit()
         self.date.setCalendarPopup(True)
         self.date.setDisplayFormat("dd/MM/yyyy")
+        self.avec_heure = QCheckBox(t("post_avec_heure"))
+        self.heure = QTimeEdit(QTime(10, 0))
+        self.heure.setDisplayFormat("HH:mm")
+        self.avec_heure.toggled.connect(self.heure.setEnabled)
+        self.heure.setEnabled(False)
         self.statut = QComboBox()
         for code in db.STATUTS_POST:
             self.statut.addItem(t("post_statut_" + code), code)
@@ -222,6 +227,10 @@ class DialoguePost(QDialog):
             self.titre.setText(post.get("titre", ""))
             self.reseau.setCurrentIndex(max(0, self.reseau.findData(post["reseau"])))
             jour = date.fromisoformat(post["date"][:10])
+            if len(post["date"]) > 10:
+                self.avec_heure.setChecked(True)
+                h, m = post["date"][11:16].split(":")
+                self.heure.setTime(QTime(int(h), int(m)))
             self.statut.setCurrentIndex(max(0, self.statut.findData(post["statut"])))
             self.note.setPlainText(post.get("note", ""))
         else:
@@ -273,6 +282,11 @@ class DialoguePost(QDialog):
         form.addRow(t("post_champ_titre"), self.titre)
         form.addRow(t("post_champ_reseau"), self.reseau)
         form.addRow(t("post_champ_date"), self.date)
+        ligne_heure = QHBoxLayout()
+        ligne_heure.addWidget(self.avec_heure)
+        ligne_heure.addWidget(self.heure)
+        ligne_heure.addStretch()
+        form.addRow(t("post_champ_heure"), ligne_heure)
         form.addRow(t("post_champ_statut"), self.statut)
         form.addRow(t("post_champ_note"), self.note)
         titre_ev = QLabel(t("post_evenements"))
@@ -309,6 +323,8 @@ class DialoguePost(QDialog):
     def _enregistrer(self) -> None:
         d = self.date.date()
         jour = date(d.year(), d.month(), d.day()).isoformat()
+        if self.avec_heure.isChecked():
+            jour += "T" + self.heure.time().toString("HH:mm")
         valeurs = dict(reseau=self.reseau.currentData(), date_=jour, statut=self.statut.currentData(),
                        note=self.note.toPlainText(), titre=self.titre.text(),
                        evenements=self.evenements_coches())

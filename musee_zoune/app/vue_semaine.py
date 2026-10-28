@@ -131,8 +131,14 @@ class VueSemaine(QWidget):
             x0 = L_HEURES + (b.debut - self.lundi).days * lj + 3
             x1 = L_HEURES + ((b.fin - self.lundi).days + 1) * lj - 3
             r = QRectF(x0, H_ENTETE + b.piste * H_BANDE, x1 - x0, H_BANDE - 3)
+            if el.nature == "post":
+                style.dessiner_post(p, r, el, el.titre, th)
+                if el.cle == self.selection:
+                    style.contour_selection(p, r, 4, th)
+                self._zones.append((r, el))
+                continue
             style.dessiner_fond(p, r, el, 4, th)
-            texte = ("◂ " if b.coupe_gauche else "") + ("✎ " if el.nature == "post" else "") + el.titre
+            texte = ("◂ " if b.coupe_gauche else "") + el.titre
             place = style.dessiner_indicateur(p, r, el)
             style.dessiner_texte(p, r.adjusted(0, 0, -place, 0), texte, el, 8.5,
                                  gras=el.nature == "expo", th=th)
@@ -164,9 +170,13 @@ class VueSemaine(QWidget):
                 y1 = max(self._y_heure(fin), y0 + H_HEURE / 2)
                 largeur = (lj - 8) / n
                 r = QRectF(L_HEURES + i * lj + 2 + col * largeur, y0 + 1, largeur - 2, y1 - y0 - 2)
-                style.dessiner_fond(p, r, el, 6, th)
-                place = style.dessiner_indicateur(p, r, el, en_haut=True)
-                self._texte_bloc(p, r.adjusted(0, 0, -place, 0), el)
+                if el.nature == "post":
+                    style.dessiner_post(p, r, el, f"{el.debut:%H:%M}  {el.titre}", self.theme,
+                                        multiligne=r.height() > 26)
+                else:
+                    style.dessiner_fond(p, r, el, 6, th)
+                    place = style.dessiner_indicateur(p, r, el, en_haut=True)
+                    self._texte_bloc(p, r.adjusted(0, 0, -place, 0), el)
                 if el.cle == self.selection:
                     style.contour_selection(p, r, 6, th)
                 self._zones.append((r, el))
@@ -241,7 +251,7 @@ class VueSemaine(QWidget):
         el = self._trouver(ev.position())
         if el:
             self.setCursor(Qt.PointingHandCursor)
-            QToolTip.showText(ev.globalPosition().toPoint(), el.titre, self)
+            QToolTip.showText(ev.globalPosition().toPoint(), el.infobulle or el.titre, self)
         else:
             self.unsetCursor()
             QToolTip.hideText()

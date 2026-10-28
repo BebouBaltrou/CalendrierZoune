@@ -22,7 +22,8 @@ class Element:
     annule: bool = False
     expo_liee: str | None = None
     source: dict = field(default_factory=dict)
-    etat_post: str | None = None   # None = aucun post, "prevu", "publie"
+    etat_post: str | None = None   # None = aucun post, "prevu", "publie" (pour un post : son statut)
+    infobulle: str = ""            # texte affiché au survol (vide = titre)
 
     @property
     def premier_jour(self) -> date:
@@ -47,7 +48,7 @@ class Donnees:
         self.perso_masques: set[str] = set()       # types de vie perso décochés
         self.sans_post_seulement = False
         self.avec_perso = True
-        self.avec_posts_libres = True
+        self.avec_posts = True                     # posts affichés dans le calendrier
         self.recherche = ""
         self.recharger()
 
@@ -126,14 +127,18 @@ class Donnees:
                     couleur=cal.COULEUR_PERSO, debut=cal.dt(p["debut"]), fin=cal.dt(p["fin"]),
                     journee=p["journee"], source=p,
                 ))
-        if self.avec_posts_libres and not self.sans_post_seulement:
-            for post in db.posts_libres_entre(self.conn, d, f):
-                if not self._recherche_ok(post["titre"], post.get("note")):
+        if self.avec_posts and not self.sans_post_seulement:
+            for post in db.posts_entre(self.conn, d, f):
+                if not self._recherche_ok(post["titre"], post.get("note"), post["reseau"]):
                     continue
-                jour = datetime.fromisoformat(post["date"][:10])
+                moment = datetime.fromisoformat(post["date"])
+                a_une_heure = len(post["date"]) > 10
                 resultat.append(Element(
-                    cle=f"post:{post['id']}", nature="post", titre=titre_post(post),
-                    couleur=cal.theme.COULEUR_ACCENT, debut=jour, fin=jour, journee=True, source=post,
+                    cle=f"post:{post['id']}", nature="post", titre=libelle_post(post),
+                    couleur=cal.theme.COULEUR_ACCENT, debut=moment,
+                    fin=moment + timedelta(minutes=30) if a_une_heure else moment,
+                    journee=not a_une_heure, source=post, etat_post=post["statut"],
+                    infobulle=infobulle_post(self.conn, post),
                 ))
         return resultat
 
@@ -146,6 +151,37 @@ class Donnees:
                 continue
             resultat.append(e)
         return resultat
+
+
+def libelle_post(post: dict, longueur: int = 60) -> str:
+    """Libellé dans le calendrier : réseau + début de la note (ou le titre)."""
+    from ..textes import t
+    texte = " ".join((post.get("note") or post.get("titre") or "").split())
+    if len(texte) > longueur:
+        texte = texte[:longueur].rsplit(" ", 1)[0] + "…"
+    reseau = t("reseau_" + post["reseau"])
+    return f"{reseau} · {texte}" if texte else reseau
+
+
+def infobulle_post(conn: sqlite3.Connection, post: dict) -> str:
+    """Détail complet au survol : réseau, date, statut, titre, note, événements liés."""
+    from ..textes import date_lisible, t
+    moment = datetime.fromisoformat(post["date"])
+    quand = date_lisible(moment.date(), longue=True) + (f", {moment:%H:%M}" if len(post["date"]) > 10 else "")
+    lignes = [f"{t('reseau_' + post['reseau'])} — {quand} — {t('post_statut_' + post['statut'])}"]
+    if post.get("titre"):
+        lignes.append(post["titre"])
+    if post.get("note"):
+        lignes.append(post["note"])
+    if post["evenements"]:
+        titres = [r[0] for r in conn.execute(
+            f"SELECT title FROM events WHERE uid IN ({','.join('?' * len(post['evenements']))}) ORDER BY start",
+            post["evenements"])]
+        lignes.append(t("post_couvre", n=len(titres)) + " :")
+        lignes += [f"  • {x}" for x in titres]
+    else:
+        lignes.append(t("post_libre"))
+    return "\n".join(lignes)
 
 
 def titre_post(post: dict) -> str:

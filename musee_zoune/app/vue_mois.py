@@ -205,14 +205,14 @@ class VueMois(QWidget):
                 visibles = ponctuels if len(ponctuels) <= lignes else ponctuels[:lignes - 1]
                 for k, el in enumerate(visibles):
                     r = QRectF(i * lj + 4, y0 + k * H_PASTILLE, lj - 8, H_PASTILLE - 3)
-                    style.dessiner_fond(p, r, el, 4, th)
                     if el.nature == "post":
-                        texte = "✎ " + el.titre
+                        heure = "" if el.journee else el.debut.strftime("%H:%M  ")
+                        style.dessiner_post(p, r, el, heure + el.titre, th)
                     else:
+                        style.dessiner_fond(p, r, el, 4, th)
                         heure = el.debut.strftime("%H:%M") if el.debut.date() == jour else "…"
-                        texte = f"{heure}  {el.titre}"
-                    place = style.dessiner_indicateur(p, r, el)
-                    style.dessiner_texte(p, r.adjusted(0, 0, -place, 0), texte, el, 8.5, th=th)
+                        place = style.dessiner_indicateur(p, r, el)
+                        style.dessiner_texte(p, r.adjusted(0, 0, -place, 0), f"{heure}  {el.titre}", el, 8.5, th=th)
                     if el.cle == self.selection:
                         style.contour_selection(p, r, 4, th)
                     self._zones.append((r, el))
@@ -281,7 +281,7 @@ class VueMois(QWidget):
         cible = self._trouver(ev.position())
         if isinstance(cible, Element):
             self.setCursor(Qt.PointingHandCursor)
-            QToolTip.showText(ev.globalPosition().toPoint(), cible.titre, self)
+            QToolTip.showText(ev.globalPosition().toPoint(), cible.infobulle or cible.titre, self)
         elif isinstance(cible, tuple):
             self.setCursor(Qt.PointingHandCursor)
         else:

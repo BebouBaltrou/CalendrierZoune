@@ -17,7 +17,7 @@ from .. import db
 from .. import theme as th_mod
 from ..textes import date_lisible, t
 from .donnees import Donnees, Element, echeance, titre_post
-from .style import icone, indicateur_icone, pastille
+from .style import icone, indicateur_icone, pastille, postit_icone
 
 CSS_DETAILS = f"""
 h3 {{ font-size: 15pt; font-weight: 400; margin: 0 0 8px 0; }}
@@ -38,6 +38,8 @@ def periode_texte(debut: datetime, fin: datetime, journee: bool) -> str:
 
 def texte_post(conn, post: dict, avec_liens: bool = True) -> str:
     jour = date_lisible(date.fromisoformat(post["date"][:10]), longue=True)
+    if len(post["date"]) > 10:
+        jour += ", " + post["date"][11:16]
     lignes = [f"{titre_post(post)} — {jour} — {t('post_statut_' + post['statut'])}"]
     if avec_liens:
         n = len(post["evenements"])
@@ -351,7 +353,7 @@ class ListePosts(QWidget):
             item.setFlags(Qt.NoItemFlags)
             self.liste.addItem(item)
         for post in posts:
-            item = QListWidgetItem(indicateur_icone(post["statut"]), texte_post(self.conn, post))
+            item = QListWidgetItem(postit_icone(post["statut"] == "publie"), texte_post(self.conn, post))
             item.setData(Qt.UserRole, post["id"])
             self.liste.addItem(item)
 

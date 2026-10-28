@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS posts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     titre      TEXT NOT NULL DEFAULT '',   -- utile surtout pour les posts « libres »
     reseau     TEXT NOT NULL,              -- instagram / facebook / newsletter / autre
-    date       TEXT NOT NULL,              -- AAAA-MM-JJ (date prévue ou de publication)
+    date       TEXT NOT NULL,              -- AAAA-MM-JJ ou AAAA-MM-JJTHH:MM (heure facultative)
     statut     TEXT NOT NULL DEFAULT 'prevu',  -- prevu / publie
     note       TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
@@ -405,10 +405,18 @@ def tous_posts(conn: sqlite3.Connection) -> list[dict]:
     return [_post_dict(conn, r) for r in conn.execute("SELECT * FROM posts ORDER BY date DESC, id DESC")]
 
 
+def posts_entre(conn: sqlite3.Connection, debut: str, fin: str) -> list[dict]:
+    """Tous les posts (liés ou libres) prévus dans [debut, fin[ (dates AAAA-MM-JJ)."""
+    lignes = conn.execute(
+        "SELECT * FROM posts WHERE substr(date, 1, 10) >= ? AND substr(date, 1, 10) < ? ORDER BY date, id",
+        (debut[:10], fin[:10]))
+    return [_post_dict(conn, r) for r in lignes]
+
+
 def posts_libres_entre(conn: sqlite3.Connection, debut: str, fin: str) -> list[dict]:
     """Posts sans événement dont la date tombe dans [debut, fin[ (affichés dans le calendrier)."""
     lignes = conn.execute(
-        """SELECT * FROM posts p WHERE p.date >= ? AND p.date < ?
+        """SELECT * FROM posts p WHERE substr(p.date, 1, 10) >= ? AND substr(p.date, 1, 10) < ?
              AND NOT EXISTS (SELECT 1 FROM post_events pe WHERE pe.post_id = p.id)
            ORDER BY p.date, p.id""", (debut[:10], fin[:10]))
     return [_post_dict(conn, r) for r in lignes]

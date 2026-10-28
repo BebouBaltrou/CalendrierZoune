@@ -191,3 +191,35 @@ def test_migration_ancien_modele(tmp_path):
     assert db.etat_posts(conn) == {"programm/x": "publie"}
     conn.close()
     db.connecter(chemin).close()  # deuxième ouverture : rien à migrer
+
+
+# --- Posts dans le calendrier (post-it) -------------------------------------------------
+
+def test_tous_les_posts_visibles_a_leur_date(conn):
+    from musee_zoune.app.donnees import Donnees
+    lie = db.ajouter_post(conn, "instagram", "2026-11-04", "publie", "Carrousel des affiches", evenements=[FONS])
+    libre = db.ajouter_post(conn, "newsletter", "2026-11-05T09:30", titre="Newsletter")
+    d = Donnees(conn)
+    posts = {e.cle: e for e in d.elements(date(2026, 11, 2), date(2026, 11, 8)) if e.nature == "post"}
+    assert set(posts) == {f"post:{lie}", f"post:{libre}"}
+    e_lie, e_libre = posts[f"post:{lie}"], posts[f"post:{libre}"]
+    assert e_lie.journee and e_lie.etat_post == "publie"
+    assert e_lie.titre == "Instagram · Carrousel des affiches"
+    assert "Fons Hickmann" in e_lie.infobulle
+    assert not e_libre.journee and e_libre.debut.hour == 9 and e_libre.debut.minute == 30
+    assert e_libre.etat_post == "prevu" and "sans événement" in e_libre.infobulle
+    d.avec_posts = False
+    assert not [e for e in d.elements(date(2026, 11, 2), date(2026, 11, 8)) if e.nature == "post"]
+
+
+def test_post_avec_heure_dans_posts_entre(conn):
+    db.ajouter_post(conn, "facebook", "2026-11-08T18:00")
+    assert len(db.posts_entre(conn, "2026-11-08", "2026-11-09")) == 1
+    assert db.posts_entre(conn, "2026-11-09", "2026-11-10") == []
+
+
+def test_libelle_post_coupe_la_note():
+    from musee_zoune.app.donnees import libelle_post
+    post = {"reseau": "instagram", "titre": "T", "note": "mot " * 40}
+    assert libelle_post(post).startswith("Instagram · mot") and libelle_post(post).endswith("…")
+    assert libelle_post({"reseau": "facebook", "titre": "", "note": ""}) == "Facebook"

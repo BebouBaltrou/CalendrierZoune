@@ -26,6 +26,8 @@ def copie_base() -> sqlite3.Connection:
     source.backup(conn)
     source.close()
     conn.row_factory = sqlite3.Row
+    # la copie ne garde que la programmation du musée : pas les posts ni la vie perso réels
+    conn.executescript("DELETE FROM post_events; DELETE FROM posts; DELETE FROM vie_perso;")
     exemples = [
         ("Week-end à Berlin", "weekend", date(2026, 11, 7), date(2026, 11, 8), True, None, None),
         ("Dentiste", "rdv", date(2026, 11, 5), date(2026, 11, 5), False, time(14, 30), time(15, 15)),
@@ -45,12 +47,16 @@ def copie_base() -> sqlite3.Connection:
     visite_fons = uid("Führung – in „Fons Hickmann", "2026-10-29")
     db.ajouter_post(conn, "instagram", "2026-10-02", "publie", "Carrousel des affiches",
                     titre="Ouverture Fons Hickmann", evenements=[fons])
-    db.ajouter_post(conn, "instagram", "2026-10-27", "prevu", "Story + rappel la veille",
+    db.ajouter_post(conn, "instagram", "2026-10-27T18:00", "prevu", "Story + rappel la veille",
                     titre="Visites de la semaine", evenements=[visite_fons, uid("Führung – in „Ungebremste")])
     db.ajouter_post(conn, "facebook", "2026-10-25", "publie", evenements=[uid("Ferienkurs – Manga", "2026-10-29")])
     db.ajouter_post(conn, "newsletter", "2026-11-03", "prevu", "Toute la programmation de novembre",
                     titre="Newsletter de novembre")
     db.ajouter_post(conn, "instagram", "2026-11-12", "prevu", titre="Coulisses de l'accrochage")
+    db.ajouter_post(conn, "facebook", "2026-10-30", "publie", "Atelier Halloween : photos des enfants",
+                    evenements=[uid("Ferienkurs – Halloween")])
+    db.ajouter_post(conn, "instagram", "2026-11-04T12:00", "prevu", "Rappel visite de jeudi",
+                    evenements=[uid("Führung – in „Ungebremste")])
     return conn
 
 

@@ -79,7 +79,7 @@ def exporter(conn, chemin: Path | str, vue: str, jour: date, compact: bool = Fal
         for attribut in ("villes_masquees", "types_masques", "expos_masquees", "perso_masques"):
             setattr(donnees, attribut, set(getattr(modele, attribut)))
         donnees.sans_post_seulement = modele.sans_post_seulement
-        donnees.avec_posts_libres = modele.avec_posts_libres
+        donnees.avec_posts = modele.avec_posts
         donnees.recherche = modele.recherche
     donnees.avec_perso = avec_perso
     donnees.ville = ville

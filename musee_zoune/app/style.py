@@ -41,8 +41,8 @@ def dessiner_fond(p: QPainter, rect: QRectF, el: Element, rayon: float = 4, th: 
         p.setBrush(QBrush(hachures, Qt.BDiagPattern))
         p.drawRoundedRect(rect.adjusted(1, 1, -1, -1), rayon, rayon)
     elif el.nature == "post":
-        p.setPen(QPen(QColor(th_mod.COULEUR_ACCENT), 1, Qt.DotLine))
-        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor(th.grille), 1))
+        p.setBrush(QColor(th.fond_survol))
         p.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), rayon, rayon)
     else:
         couleur = QColor(el.couleur)
@@ -58,7 +58,7 @@ def couleur_texte(el: Element, th: Theme = SOMBRE) -> QColor:
     if el.nature == "perso":
         return QColor("#E9D5FF" if th.sombre else "#5B2A86")
     if el.nature == "post":
-        return QColor(th_mod.COULEUR_ACCENT if th.sombre else "#1A73E8")
+        return QColor(th.texte)
     return QColor(texte_sur(el.couleur))
 
 
@@ -76,6 +76,62 @@ def dessiner_texte(p: QPainter, rect: QRectF, texte: str, el: Element, taille: f
         texte = p.fontMetrics().elidedText(texte, Qt.ElideRight, int(zone.width()))
         p.drawText(zone, Qt.AlignLeft | Qt.AlignVCenter, texte)
     p.restore()
+
+
+def dessiner_postit(p: QPainter, zone: QRectF, publie: bool = False) -> None:
+    """Petit post-it jaune au coin corné ; coche verte s'il est publié."""
+    p.save()
+    p.setRenderHint(QPainter.Antialiasing)
+    c = min(zone.width(), zone.height())
+    x, y = zone.left(), zone.top() + (zone.height() - c) / 2
+    pli = c * 0.32
+    from PySide6.QtGui import QPolygonF
+    from PySide6.QtCore import QPointF
+    feuille = QPolygonF([QPointF(x, y), QPointF(x + c, y), QPointF(x + c, y + c - pli),
+                         QPointF(x + c - pli, y + c), QPointF(x, y + c)])
+    p.setPen(QPen(QColor("#B8860B"), 0.8))
+    p.setBrush(QColor(th_mod.COULEUR_POSTIT))
+    p.drawPolygon(feuille)
+    coin = QPolygonF([QPointF(x + c, y + c - pli), QPointF(x + c - pli, y + c - pli),
+                      QPointF(x + c - pli, y + c)])
+    p.setBrush(QColor(th_mod.COULEUR_POSTIT_PLI))
+    p.drawPolygon(coin)
+    p.setPen(QPen(QColor(0, 0, 0, 60), max(0.8, c / 14)))
+    for k in (0.32, 0.52):
+        p.drawLine(QPointF(x + c * 0.18, y + c * k), QPointF(x + c * 0.78, y + c * k))
+    if publie:
+        r = c * 0.62
+        rond = QRectF(x + c - r * 0.7, y - r * 0.25, r, r)
+        p.setPen(QPen(QColor("#202124"), 0.8))
+        p.setBrush(QColor(th_mod.COULEUR_POST_PUBLIE))
+        p.drawEllipse(rond)
+        p.setPen(QPen(QColor("#202124"), max(1.2, c / 10)))
+        p.drawLine(QPointF(rond.left() + r * 0.24, rond.center().y()),
+                   QPointF(rond.center().x() - r * 0.05, rond.bottom() - r * 0.26))
+        p.drawLine(QPointF(rond.center().x() - r * 0.05, rond.bottom() - r * 0.26),
+                   QPointF(rond.right() - r * 0.22, rond.top() + r * 0.28))
+    p.restore()
+
+
+def dessiner_post(p: QPainter, rect: QRectF, el: Element, texte: str, th: Theme = SOMBRE,
+                  taille: float = 8.5, multiligne: bool = False) -> None:
+    """Pastille de post : fond discret, post-it à gauche, libellé."""
+    dessiner_fond(p, rect, el, 4, th)
+    cote = min(14.0, rect.height() - 4) if not multiligne else 14.0
+    zone_icone = QRectF(rect.left() + 4, rect.top() + (2 if multiligne else (rect.height() - cote) / 2),
+                        cote, cote)
+    dessiner_postit(p, zone_icone, el.etat_post == "publie")
+    dessiner_texte(p, rect.adjusted(cote + 2, 0, 0, 0), texte, el, taille, multiligne=multiligne, th=th)
+
+
+def postit_icone(publie: bool = False, taille: int = 16) -> QIcon:
+    pix = QPixmap(taille * 2, taille * 2)
+    pix.setDevicePixelRatio(2)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    dessiner_postit(p, QRectF(1, 2, taille - 3, taille - 3), publie)
+    p.end()
+    return QIcon(pix)
 
 
 def contour_selection(p: QPainter, r: QRectF, rayon: float = 4, th: Theme = SOMBRE) -> None:

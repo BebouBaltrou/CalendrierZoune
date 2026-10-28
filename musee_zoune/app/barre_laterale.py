@@ -311,9 +311,12 @@ class BarreLaterale(QWidget):
         sans_post.setToolTip(t("filtre_sans_post_aide"))
         sans_post.basculee.connect(self._sans_post)
         self.s_posts.ajouter(sans_post)
-        libres = CaseCouleur(t("filtre_posts_libres"), th_mod.COULEUR_ACCENT, d.avec_posts_libres)
-        libres.basculee.connect(self._posts_libres)
-        self.s_posts.ajouter(libres)
+        posts = CaseCouleur(t("filtre_posts"), th_mod.COULEUR_POSTIT, d.avec_posts)
+        posts.setToolTip(t("filtre_posts_aide"))
+        posts.basculee.connect(self._posts)
+        self.s_posts.ajouter(posts)
+        self.s_posts.ajouter(_LegendePostit(False, t("legende_postit_prevu")))
+        self.s_posts.ajouter(_LegendePostit(True, t("legende_postit_publie")))
         for etat, cle in ((None, "legende_sans_post"), ("prevu", "legende_post_prevu"),
                           ("publie", "legende_post_publie")):
             self.s_posts.ajouter(_LegendeIndicateur(etat, t(cle)))
@@ -333,9 +336,27 @@ class BarreLaterale(QWidget):
         self.donnees.sans_post_seulement = coche
         self.filtres_changes.emit()
 
-    def _posts_libres(self, coche: bool) -> None:
-        self.donnees.avec_posts_libres = coche
+    def _posts(self, coche: bool) -> None:
+        self.donnees.avec_posts = coche
         self.filtres_changes.emit()
+
+
+class _LegendePostit(QWidget):
+    """Légende du post-it (prévu / publié)."""
+
+    def __init__(self, publie: bool, texte: str, parent=None):
+        super().__init__(parent)
+        self.publie, self.texte = publie, texte
+        self.setFixedHeight(22)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        style.dessiner_postit(p, QRectF(15, 4, 14, 14), self.publie)
+        p.setFont(style.police(8.5))
+        p.setPen(QColor(SOMBRE.texte_secondaire))
+        p.drawText(QRectF(40, 0, self.width() - 44, self.height()), Qt.AlignLeft | Qt.AlignVCenter,
+                   self.texte)
+        p.end()
 
 
 class _LegendeIndicateur(QWidget):

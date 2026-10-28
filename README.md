@@ -88,9 +88,13 @@ Menu **Outils** de la barre du haut :
 ## Posts : plusieurs événements par post
 
 Un post peut couvrir zéro, un ou plusieurs événements (table `post_events`). À la création, on coche
-les événements concernés (avec recherche) ; sans case cochée, c'est un post « libre », affiché en
-pointillés à sa date dans le calendrier. Un événement n'est couvert que s'il est explicitement coché :
+les événements concernés (avec recherche) ; sans case cochée, c'est un post « libre ». Un événement n'est couvert que s'il est explicitement coché :
 un post sur une exposition ne couvre pas ses visites. Les anciennes bases sont migrées automatiquement.
+
+Tous les posts (liés ou libres) apparaissent dans le calendrier à leur date, avec un post-it jaune
+(coche verte = publié) : à l'heure prévue dans la vue semaine si une heure est indiquée, sinon en
+ligne « journée ». Libellé : réseau + début de la note ; survol = détail et événements liés ;
+clic = détail du post. Case « Posts dans le calendrier » (colonne gauche) pour les masquer.
 
 ## Version à envoyer (exécutable Windows)
 
