@@ -68,6 +68,11 @@ def main() -> None:
         capturer(fenetre, sortie / f"vue_semaine_{langue}.png")
 
         if langue == "fr":
+            fenetre.act_compact.setChecked(True)
+            fenetre.aller_a(date(2026, 11, 2), vue=0)
+            capturer(fenetre, sortie / "vue_mois_compact_fr.png")
+            fenetre.act_compact.setChecked(False)
+            fenetre.aller_a(date(2026, 11, 2), vue=1)
             fenetre.dock_chg.raise_()
             capturer(fenetre, sortie / "changements_fr.png")
             fenetre.aller_a(date(2026, 12, 1), vue=0)

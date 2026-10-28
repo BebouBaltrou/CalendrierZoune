@@ -118,3 +118,28 @@ def test_semaines_du_mois():
 def test_fin_a_minuit_compte_la_veille():
     assert cal.jours_de({"start": "2026-11-01T10:00", "end": "2026-11-03T00:00"}) == (
         date(2026, 11, 1), date(2026, 11, 2))
+
+
+# --- Mode compact de la vue mois ------------------------------------------------
+
+def test_compact_huit_expos_le_mois_tient_a_l_ecran():
+    from musee_zoune.app.vue_mois import disposition_semaine
+    zone, semaines = 780, 6
+    h_cible = (zone - 26) / semaines
+    hauteur, lignes = disposition_semaine(0, 8, 5, compact=True, h_cible=h_cible)
+    assert hauteur * semaines <= zone - 24
+    assert lignes >= 3  # au moins 3 lignes de pastilles (ou 2 + « +n autres »)
+
+
+def test_normal_les_bandes_prennent_de_la_place():
+    from musee_zoune.app.vue_mois import H_BANDE, disposition_semaine
+    hauteur, _ = disposition_semaine(0, 8, 5, compact=False)
+    assert hauteur > 8 * H_BANDE
+
+
+def test_compact_vie_perso_garde_sa_hauteur():
+    from musee_zoune.app.vue_mois import H_BANDE, H_FINE, disposition_semaine
+    h1, l1 = disposition_semaine(1, 8, 9, compact=True, h_cible=200)
+    h0, l0 = disposition_semaine(0, 8, 9, compact=True, h_cible=200)
+    assert h1 == h0 == 200 and l1 <= l0
+    assert H_FINE < H_BANDE

@@ -172,6 +172,8 @@ class Bande:
     piste: int = 0
     coupe_gauche: bool = False  # commence avant la semaine
     coupe_droite: bool = False  # continue après
+    y: float = 0                # position verticale (calculée par la vue)
+    h: float = 0
 
 
 def bandes_semaine(elements: list[tuple[str, date, date]], lundi: date) -> list[Bande]:

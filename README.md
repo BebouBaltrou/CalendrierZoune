@@ -24,6 +24,7 @@ Double-cliquer sur `lancer.bat` (crée l'environnement Python au premier lanceme
 Ou : `.venv\Scripts\python -m musee_zoune.app`.
 
 - Vue **Mois** : expositions en bandes colorées sur leur période, autres événements en pastilles.
+  Bouton « Compact » (mémorisé) : bandes fines sans texte (nom au survol), le mois tient à l'écran.
   Les visites et vernissages prennent la couleur de leur exposition.
 - Vue **Semaine** : créneaux horaires, titre complet, lieu, type ; clic = détails.
 - **Vie de Zoune** : vacances, week-ends, rendez-vous (hachurés violets). Double-clic sur un jour

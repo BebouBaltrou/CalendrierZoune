@@ -24,6 +24,16 @@ from .vue_semaine import VueSemaine
 log = logging.getLogger("musee_zoune.app")
 
 
+class ZoneDefilement(QScrollArea):
+    """Zone de défilement qui prévient quand sa taille change (mode compact)."""
+
+    redimensionnee = Signal()
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self.redimensionnee.emit()
+
+
 class FilSync(QThread):
     """Synchronisation en arrière-plan : l'interface reste utilisable."""
 
@@ -57,11 +67,12 @@ class FenetrePrincipale(QMainWindow):
         self.vue_semaine = VueSemaine(self.donnees)
         self.pile = QStackedWidget()
         for vue in (self.vue_mois, self.vue_semaine):
-            zone = QScrollArea()
+            zone = ZoneDefilement()
             zone.setWidgetResizable(True)
             zone.setWidget(vue)
             zone.setFrameShape(QScrollArea.NoFrame)
             self.pile.addWidget(zone)
+        self.pile.widget(0).redimensionnee.connect(self.vue_mois.ajuster_a_la_zone)
 
         # bandeau des changements non lus
         self.bandeau = QPushButton()
@@ -108,6 +119,7 @@ class FenetrePrincipale(QMainWindow):
         self.changements.evenement_choisi.connect(self._evenement_choisi)
         self.changements.compteur_change.connect(self._compteur)
 
+        self._barre_defilement_mois()
         self.retraduire()
         self.dock_chg.raise_() if self._non_lus() else self.dock_details.raise_()
         self._etat_sync_initial()
@@ -140,6 +152,11 @@ class FenetrePrincipale(QMainWindow):
             barre.addAction(act)
             act.triggered.connect(lambda _=False, i=i: self._changer_vue(i))
         self.act_mois.setChecked(True)
+        self.act_compact = QAction(self, checkable=True)
+        self.act_compact.setChecked(db.lire_reglage(self.conn, "mois_compact", "0") == "1")
+        self.vue_mois.compact = self.act_compact.isChecked()
+        self.act_compact.toggled.connect(self._compact)
+        barre.addAction(self.act_compact)
         barre.addSeparator()
         self.lbl_ville = QLabel()
         self.combo_ville = QComboBox()
@@ -169,6 +186,8 @@ class FenetrePrincipale(QMainWindow):
         self.act_auj.setText(t("nav_aujourdhui"))
         self.act_mois.setText(t("vue_mois"))
         self.act_semaine.setText(t("vue_semaine"))
+        self.act_compact.setText(t("vue_compact"))
+        self.act_compact.setToolTip(t("vue_compact_aide"))
         self.act_perso.setText(t("perso_gerer"))
         self.act_actualiser.setText("⟳ " + t("sync_bouton_actualiser"))
         self.lbl_ville.setText(t("filtre_ville") + " ")
@@ -235,6 +254,17 @@ class FenetrePrincipale(QMainWindow):
             self.vue_mois.afficher_mois(self.jour.year, self.jour.month)
             self.titre_periode.setText(f"{nom_mois(self.jour.month).capitalize()} {self.jour.year}")
             self.legende.remplir(self.vue_mois.lundis[0], self.vue_mois.lundis[-1] + timedelta(days=6))
+
+    def _barre_defilement_mois(self) -> None:
+        politique = Qt.ScrollBarAlwaysOff if self.vue_mois.compact else Qt.ScrollBarAsNeeded
+        self.pile.widget(0).setVerticalScrollBarPolicy(politique)
+
+    def _compact(self, actif: bool) -> None:
+        db.ecrire_reglage(self.conn, "mois_compact", "1" if actif else "0")
+        self.vue_mois.basculer_compact(actif)
+        self._barre_defilement_mois()
+        if self.vue_semaine_active():
+            self._changer_vue(0)
 
     def _ville(self) -> None:
         self.donnees.ville = self.combo_ville.currentData()
