@@ -59,3 +59,16 @@ Ou : `.venv\Scripts\python -m musee_zoune.app`.
 - `musee_zoune/config.py` : réglages
 - `musee_zoune/calendrier.py` : couleurs des expositions, liens expo, mise en page (sans Qt)
 - `musee_zoune/app/` : interface PySide6 (fenêtre, vues mois/semaine, panneaux, dialogues)
+
+## Étape 4 : outils
+
+Menu **Outils** de la barre du haut :
+
+- **Compresser des fichiers…** : glisser-déposer ou choisir des photos (JPG, PNG, HEIC, WEBP, TIFF)
+  et des PDF. Préréglages « Mail » (moins de 2 Mo, photos 1600 px), « Web » (1200 px, qualité 80),
+  « Impression » (3500 px, qualité 92) ou personnalisé. Les fichiers compressés sont créés à côté des
+  originaux avec un suffixe (`photo_mail.jpg`) ; les originaux ne sont jamais modifiés.
+  Photos : Pillow + pillow-heif ; PDF : PyMuPDF (réduction des images intégrées). Aucun logiciel à installer.
+- **Exporter le calendrier en PDF…** : vue mois (compacte ou non) ou semaine, A4 paysage, légende des
+  couleurs, avec ou sans la Vie de Zoune, dans la langue de l'interface.
+  Exemples : `docs/exemple_calendrier_novembre_2026.pdf`, `docs/exemple_semaine_45_2026.pdf`.

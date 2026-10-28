@@ -64,6 +64,7 @@ class VueMois(QWidget):
         self.selection: str | None = None
         self.compact = False
         self._h_cible: float | None = None
+        self.hauteur_imposee: float | None = None  # export PDF : hauteur totale voulue
         self._zones: list[tuple[QRectF, object]] = []
         self.setMouseTracking(True)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -75,8 +76,12 @@ class VueMois(QWidget):
 
     def _hauteur_cible(self) -> float | None:
         """Hauteur d'une semaine pour que le mois remplisse la zone visible."""
+        if not self.compact or not self.lundis:
+            return None
+        if self.hauteur_imposee:
+            return float(int((self.hauteur_imposee - H_ENTETE - 4) / len(self.lundis)))
         zone = self.parentWidget()
-        if not self.compact or zone is None or not self.lundis:
+        if zone is None:
             return None
         return float(int((zone.height() - H_ENTETE - 4) / len(self.lundis)))
 

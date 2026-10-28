@@ -52,6 +52,38 @@ def capturer(fenetre, chemin: Path) -> None:
     print("capture :", chemin)
 
 
+def captures_etape4(fenetre, conn, sortie: Path) -> None:
+    """Dialogue de compression (sur des fichiers temporaires) et PDF d'exemple."""
+    import os
+    import tempfile
+
+    from PIL import Image
+
+    from musee_zoune.app.export_pdf import exporter
+    from musee_zoune.app.outils import DialogueCompression
+
+    dossier = Path(tempfile.mkdtemp(prefix="zoune_"))
+    fichiers = []
+    for nom, taille in (("vernissage_falten.jpg", (4032, 3024)), ("affiche_plenkers.png", (3000, 4200))):
+        bruit = Image.frombytes("L", taille, os.urandom(taille[0] * taille[1]))
+        Image.merge("RGB", [bruit, Image.linear_gradient("L").resize(taille), bruit]).save(
+            dossier / nom, quality=95)
+        fichiers.append(dossier / nom)
+    dialogue = DialogueCompression(fenetre)
+    dialogue.ajouter(fichiers)
+    dialogue.show()
+    dialogue._lancer()
+    dialogue.fil.wait()
+    QApplication.processEvents()
+    capturer(dialogue, sortie / "compression_fr.png")
+    dialogue.close()
+
+    docs = sortie.parent
+    exporter(conn, docs / "exemple_calendrier_novembre_2026.pdf", "mois", date(2026, 11, 1), compact=True)
+    exporter(conn, docs / "exemple_semaine_45_2026.pdf", "semaine", date(2026, 11, 2))
+    print("PDF d'exemple :", docs)
+
+
 def main() -> None:
     sortie = Path(sys.argv[1] if len(sys.argv) > 1 else "captures")
     sortie.mkdir(parents=True, exist_ok=True)
@@ -97,6 +129,8 @@ def main() -> None:
             capturer(fenetre, sortie / "changements_fr.png")
             fenetre.aller_a(date(2026, 12, 1), vue=0)
             capturer(fenetre, sortie / "vue_mois_decembre_fr.png")
+        if langue == "fr":
+            captures_etape4(fenetre, conn, sortie)
         fenetre.close()
     conn.close()
 

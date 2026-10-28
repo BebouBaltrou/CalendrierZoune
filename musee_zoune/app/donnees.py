@@ -41,6 +41,7 @@ class Donnees:
         self.ville: str | None = None
         self.expos_masquees: set[str] = set()
         self.sans_post_seulement = False
+        self.avec_perso = True
         self.recharger()
 
     def recharger(self) -> None:
@@ -91,7 +92,7 @@ class Donnees:
                 source=ev,
                 etat_post=etats.get(ev["uid"]),
             ))
-        for p in db.perso_entre(self.conn, d, f):
+        for p in (db.perso_entre(self.conn, d, f) if self.avec_perso else []):
             resultat.append(Element(
                 cle=f"perso:{p['id']}",
                 nature="perso",

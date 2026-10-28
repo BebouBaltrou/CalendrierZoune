@@ -9,7 +9,7 @@ from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QComboBox, QDockWidget, QLabel, QMainWindow, QPushButton, QScrollArea, QSizePolicy,
-    QStackedWidget, QSystemTrayIcon, QToolBar, QVBoxLayout, QWidget,
+    QMenu, QStackedWidget, QSystemTrayIcon, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .. import db, textes
@@ -186,6 +186,13 @@ class FenetrePrincipale(QMainWindow):
         barre.addAction(self.act_sans_post)
         barre.addSeparator()
         self.act_perso = barre.addAction("", self._liste_perso)
+        self.menu_outils = QMenu(self)
+        self.act_compression = self.menu_outils.addAction("", self._compression)
+        self.act_export = self.menu_outils.addAction("", self._export_pdf)
+        self.btn_outils = QToolButton()
+        self.btn_outils.setMenu(self.menu_outils)
+        self.btn_outils.setPopupMode(QToolButton.InstantPopup)
+        barre.addWidget(self.btn_outils)
         espace = QWidget()
         espace.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         barre.addWidget(espace)
@@ -210,6 +217,9 @@ class FenetrePrincipale(QMainWindow):
         self.act_compact.setText(t("vue_compact"))
         self.act_compact.setToolTip(t("vue_compact_aide"))
         self.act_perso.setText(t("perso_gerer"))
+        self.btn_outils.setText(t("outils") + " ▾")
+        self.act_compression.setText(t("comp_menu"))
+        self.act_export.setText(t("export_menu"))
         self.act_sans_post.setText("● " + t("filtre_sans_post"))
         self.act_sans_post.setToolTip(t("filtre_sans_post_aide"))
         self.act_actualiser.setText("⟳ " + t("sync_bouton_actualiser"))
@@ -290,6 +300,14 @@ class FenetrePrincipale(QMainWindow):
         self._barre_defilement_mois()
         if self.vue_semaine_active():
             self._changer_vue(0)
+
+    def _compression(self) -> None:
+        from .outils import DialogueCompression
+        DialogueCompression(self).exec()
+
+    def _export_pdf(self) -> None:
+        from .outils import DialogueExport
+        DialogueExport(self).exec()
 
     def _filtre_sans_post(self, actif: bool) -> None:
         self.donnees.sans_post_seulement = actif
