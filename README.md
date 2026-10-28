@@ -34,10 +34,10 @@ Ou : `.venv\Scripts\python -m musee_zoune.app`.
 
 ## Étape 3 : suivi des posts et rappels
 
-- **Posts** : dans le panneau Détails d'un événement ou d'une exposition, « Ajouter un post… »
-  (réseau Instagram / Facebook / newsletter / autre, date, statut prévu / publié, note).
+- **Posts** : depuis le panneau Détails d'un événement (« Ajouter un post… »), le bouton « + » ou la
+  liste des posts (réseau Instagram / Facebook / newsletter / autre, date, statut, titre, note).
 - **Indicateur** sur les événements à venir, dans les deux vues : pastille orange = pas encore de post,
-  cercle bleu = post prévu, coche verte = post publié. Bouton « ● Sans post » pour ne voir que ceux-là.
+  cercle bleu = post prévu, coche verte = post publié. Case « Sans post uniquement » dans la colonne gauche.
 - **À poster** : onglet + bandeau orange listant les événements des 7 prochains jours sans aucun post,
   mis à jour au lancement et après chaque synchronisation.
 - **Notification Windows** (zone de notification) une fois par jour, au premier lancement, s'il reste
@@ -53,7 +53,7 @@ Ou : `.venv\Scripts\python -m musee_zoune.app`.
 ### Fichiers
 
 - `musee_zoune/scraper.py` : téléchargement et parsing
-- `musee_zoune/db.py` : schéma SQLite (`events`, `changes`, `sync_runs`, `vie_perso`, `posts`, `expo_couleurs`, `reglages`)
+- `musee_zoune/db.py` : schéma SQLite (`events`, `changes`, `sync_runs`, `vie_perso`, `posts`, `post_events`, `expo_couleurs`, `reglages`)
 - `musee_zoune/sync.py` : comparaison et résumé
 - `musee_zoune/textes.py` : tous les textes affichés (FR et DE)
 - `musee_zoune/config.py` : réglages
@@ -72,3 +72,22 @@ Menu **Outils** de la barre du haut :
 - **Exporter le calendrier en PDF…** : vue mois (compacte ou non) ou semaine, A4 paysage, légende des
   couleurs, avec ou sans la Vie de Zoune, dans la langue de l'interface.
   Exemples : `docs/exemple_calendrier_novembre_2026.pdf`, `docs/exemple_semaine_45_2026.pdf`.
+
+## Design (thème sombre façon Google Agenda)
+
+- Toutes les couleurs et la feuille de style sont dans `musee_zoune/theme.py` (thème SOMBRE pour
+  l'application, CLAIR pour l'export PDF).
+- Barre du haut : ☰ (replier la colonne gauche), « Aujourd'hui », ‹ ›, titre de la période, recherche,
+  choix Mois / Semaine, Compact, Actualiser, cloche à badge (changements + à poster), ⋯ (posts, Vie de
+  Zoune, compression, export PDF), langue FR / DE.
+- Colonne gauche : mini-calendrier (clic = aller à la date), cases à cocher colorées par exposition,
+  type, lieu, type de Vie de Zoune, filtre « Sans post uniquement » et « Posts libres ».
+- Panneau de droite (s'ouvre au clic) : Détails, Changements, À poster, Posts.
+- Bouton « + » flottant : nouvel élément de Vie de Zoune ou nouveau post.
+
+## Posts : plusieurs événements par post
+
+Un post peut couvrir zéro, un ou plusieurs événements (table `post_events`). À la création, on coche
+les événements concernés (avec recherche) ; sans case cochée, c'est un post « libre », affiché en
+pointillés à sa date dans le calendrier. Un événement n'est couvert que s'il est explicitement coché :
+un post sur une exposition ne couvre pas ses visites. Les anciennes bases sont migrées automatiquement.

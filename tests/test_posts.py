@@ -33,15 +33,16 @@ def _uid(conn, debut_titre, jour=None):
 # --- CRUD -------------------------------------------------------------------
 
 def test_crud_post(conn):
-    id_ = db.ajouter_post(conn, FONS, "instagram", "2026-10-30", "prevu", "carrousel affiches")
+    id_ = db.ajouter_post(conn, "instagram", "2026-10-30", "prevu", "carrousel affiches", evenements=[FONS])
     assert db.lire_post(conn, id_)["note"] == "carrousel affiches"
     assert db.etat_posts(conn) == {FONS: "prevu"}
 
     db.modifier_post(conn, id_, "instagram", "2026-10-31", "publie", "carrousel affiches")
+    assert db.lire_post(conn, id_)["evenements"] == [FONS]  # liens inchangés
     assert db.lire_post(conn, id_)["statut"] == "publie"
     assert db.etat_posts(conn) == {FONS: "publie"}
 
-    db.ajouter_post(conn, FONS, "newsletter", "2026-11-15", "prevu")
+    db.ajouter_post(conn, "newsletter", "2026-11-15", "prevu", evenements=[FONS])
     assert [p["reseau"] for p in db.posts_de(conn, FONS)] == ["instagram", "newsletter"]
     assert db.etat_posts(conn)[FONS] == "publie"  # au moins un publié
 
@@ -56,7 +57,7 @@ def test_crud_post(conn):
 ])
 def test_post_invalide_refuse(conn, reseau, jour, statut):
     with pytest.raises(ValueError):
-        db.ajouter_post(conn, FONS, reseau, jour, statut)
+        db.ajouter_post(conn, reseau, jour, statut, evenements=[FONS])
 
 
 # --- Rappel J-7 ---------------------------------------------------------------
@@ -71,7 +72,7 @@ def test_a_poster_fenetre_de_7_jours(conn):
 
 def test_un_post_retire_l_evenement_de_la_liste(conn):
     uid = db.a_poster(conn, AUJOURDHUI)[0]["uid"]
-    db.ajouter_post(conn, uid, "facebook", "2026-10-28", "prevu")
+    db.ajouter_post(conn, "facebook", "2026-10-28", "prevu", evenements=[uid])
     assert uid not in [e["uid"] for e in db.a_poster(conn, AUJOURDHUI)]
 
 
@@ -96,7 +97,7 @@ def test_echeance():
 
 def test_etat_post_sur_les_elements(conn):
     uid = _uid(conn, "Führung – in „Ungebremste")
-    db.ajouter_post(conn, uid, "instagram", "2026-11-01", "publie")
+    db.ajouter_post(conn, "instagram", "2026-11-01", "publie", evenements=[uid])
     elements = {e.cle: e for e in Donnees(conn).elements(date(2026, 11, 2), date(2026, 11, 8))}
     assert elements[f"ev:{uid}"].etat_post == "publie"
     assert elements[f"ev:{FONS}"].etat_post is None
@@ -104,7 +105,7 @@ def test_etat_post_sur_les_elements(conn):
 
 def test_filtre_sans_post(conn):
     uid = _uid(conn, "Führung – in „Ungebremste")
-    db.ajouter_post(conn, uid, "instagram", "2026-11-01", "prevu")
+    db.ajouter_post(conn, "instagram", "2026-11-01", "prevu", evenements=[uid])
     donnees = Donnees(conn)
     donnees.sans_post_seulement = True
     cles = {e.cle for e in donnees.elements(date(2026, 11, 2), date(2026, 11, 8))}
@@ -122,3 +123,71 @@ def test_notification_une_fois_par_jour(conn):
     noter_notification(conn, AUJOURDHUI)
     assert not notification_a_faire(conn, AUJOURDHUI)
     assert notification_a_faire(conn, date(2026, 10, 29))
+
+
+# --- Plusieurs événements par post, posts libres, migration --------------------------
+
+def test_un_post_couvre_plusieurs_evenements(conn):
+    visite = _uid(conn, "Führung – in „Fons Hickmann", "2026-10-29")
+    id_ = db.ajouter_post(conn, "instagram", "2026-10-28", evenements=[FONS, visite])
+    assert set(db.lire_post(conn, id_)["evenements"]) == {FONS, visite}
+    assert set(db.etat_posts(conn)) == {FONS, visite}
+    assert visite not in [e["uid"] for e in db.a_poster(conn, AUJOURDHUI)]
+
+
+def test_post_sur_expo_ne_couvre_pas_ses_visites(conn):
+    visite = _uid(conn, "Führung – in „Fons Hickmann", "2026-10-29")
+    db.ajouter_post(conn, "instagram", "2026-10-28", evenements=[FONS])
+    assert visite not in db.etat_posts(conn)
+    assert visite in [e["uid"] for e in db.a_poster(conn, AUJOURDHUI)]
+
+
+def test_modifier_les_liens(conn):
+    visite = _uid(conn, "Führung – in „Fons Hickmann", "2026-10-29")
+    id_ = db.ajouter_post(conn, "facebook", "2026-10-28", evenements=[FONS])
+    db.modifier_post(conn, id_, "facebook", "2026-10-28", "prevu", evenements=[visite])
+    assert db.lire_post(conn, id_)["evenements"] == [visite]
+    db.modifier_post(conn, id_, "facebook", "2026-10-28", "prevu", evenements=[])
+    assert db.lire_post(conn, id_)["evenements"] == [] and db.etat_posts(conn) == {}
+
+
+def test_post_libre_visible_a_sa_date(conn):
+    id_ = db.ajouter_post(conn, "newsletter", "2026-11-03", titre="Newsletter de novembre")
+    libres = db.posts_libres_entre(conn, "2026-11-02", "2026-11-09")
+    assert [p["id"] for p in libres] == [id_] and libres[0]["titre"] == "Newsletter de novembre"
+    assert db.posts_libres_entre(conn, "2026-11-04", "2026-11-09") == []
+    db.ajouter_post(conn, "instagram", "2026-11-03", evenements=[FONS])
+    assert len(db.posts_libres_entre(conn, "2026-11-02", "2026-11-09")) == 1  # lié : pas libre
+    assert len(db.tous_posts(conn)) == 2
+
+
+def test_supprimer_post_supprime_les_liens(conn):
+    id_ = db.ajouter_post(conn, "instagram", "2026-10-28", evenements=[FONS])
+    db.supprimer_post(conn, id_)
+    assert conn.execute("SELECT COUNT(*) FROM post_events").fetchone()[0] == 0
+
+
+def test_migration_ancien_modele(tmp_path):
+    import sqlite3
+    chemin = tmp_path / "ancienne.db"
+    ancienne = db.connecter(chemin)
+    ancienne.executescript("""
+        INSERT INTO events (uid, title, type, start, url, first_seen, last_seen, updated_at)
+            VALUES ('programm/x', 'X', 'visite', '2026-11-01T10:00', 'u', 'a', 'a', 'a');
+        DROP TABLE post_events;
+        DROP TABLE posts;
+        CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, event_uid TEXT NOT NULL,
+            reseau TEXT NOT NULL, date TEXT NOT NULL, statut TEXT NOT NULL DEFAULT 'prevu',
+            note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+        CREATE INDEX idx_posts_event ON posts(event_uid);
+        INSERT INTO posts (event_uid, reseau, date, statut, note, created_at)
+            VALUES ('programm/x', 'instagram', '2026-10-30', 'publie', 'story', '2026-10-28');
+    """)
+    ancienne.commit()
+    ancienne.close()
+    conn = db.connecter(chemin)
+    post = db.lire_post(conn, 1)
+    assert post["evenements"] == ["programm/x"] and post["note"] == "story" and post["titre"] == ""
+    assert db.etat_posts(conn) == {"programm/x": "publie"}
+    conn.close()
+    db.connecter(chemin).close()  # deuxième ouverture : rien à migrer

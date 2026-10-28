@@ -9,6 +9,7 @@ from PySide6.QtCore import QMarginsF, QPoint, QRectF, Qt
 from PySide6.QtGui import QColor, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen
 
 from .. import calendrier as cal
+from ..theme import CLAIR
 from ..textes import date_lisible, nom_mois, t
 from . import style
 from .donnees import Donnees
@@ -49,7 +50,7 @@ def _legende(p: QPainter, donnees: Donnees, zone: QRectF, debut: date, fin: date
         carre = QRectF(x, y + 3, 14, 14)
         if perso:
             p.setPen(QPen(QColor(cal.COULEUR_PERSO), 1.2, Qt.DashLine))
-            p.setBrush(QColor(cal.COULEUR_PERSO_FOND))
+            p.setBrush(QColor(CLAIR.perso_fond))
         else:
             p.setPen(QPen(QColor(couleur).darker(130)))
             p.setBrush(QColor(couleur))
@@ -67,13 +68,23 @@ def hauteur_legende(donnees: Donnees, debut: date, fin: date, avec_perso: bool) 
 
 def exporter(conn, chemin: Path | str, vue: str, jour: date, compact: bool = False,
              avec_perso: bool = True, ville: str | None = None,
-             expos_masquees: set[str] | None = None) -> Path:
-    """Écrit le PDF et renvoie son chemin. Nécessite une QApplication."""
+             expos_masquees: set[str] | None = None, modele: Donnees | None = None) -> Path:
+    """Écrit le PDF (thème clair) et renvoie son chemin. Nécessite une QApplication.
+
+    `modele` : les filtres de l'écran (expositions, types, lieux… décochés) sont repris.
+    """
     chemin = Path(chemin)
     donnees = Donnees(conn)
+    if modele is not None:
+        for attribut in ("villes_masquees", "types_masques", "expos_masquees", "perso_masques"):
+            setattr(donnees, attribut, set(getattr(modele, attribut)))
+        donnees.sans_post_seulement = modele.sans_post_seulement
+        donnees.avec_posts_libres = modele.avec_posts_libres
+        donnees.recherche = modele.recherche
     donnees.avec_perso = avec_perso
     donnees.ville = ville
-    donnees.expos_masquees = set(expos_masquees or ())
+    if expos_masquees is not None:
+        donnees.expos_masquees = set(expos_masquees)
 
     ecrivain = QPdfWriter(str(chemin))
     ecrivain.setResolution(RESOLUTION)
@@ -99,11 +110,11 @@ def exporter(conn, chemin: Path | str, vue: str, jour: date, compact: bool = Fal
 
     # vue dessinée par le même code qu'à l'écran
     if vue == "semaine":
-        widget = VueSemaine(donnees)
+        widget = VueSemaine(donnees, theme=CLAIR)
         widget.afficher_semaine(jour)
         debut, fin = widget.lundi, widget.lundi + timedelta(days=6)
     else:
-        widget = VueMois(donnees)
+        widget = VueMois(donnees, theme=CLAIR)
         widget.compact = compact
         widget.afficher_mois(jour.year, jour.month)
         debut, fin = widget.lundis[0], widget.lundis[-1] + timedelta(days=6)

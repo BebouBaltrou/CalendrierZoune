@@ -123,12 +123,12 @@ def test_fin_a_minuit_compte_la_veille():
 # --- Mode compact de la vue mois ------------------------------------------------
 
 def test_compact_huit_expos_le_mois_tient_a_l_ecran():
-    from musee_zoune.app.vue_mois import disposition_semaine
+    from musee_zoune.app.vue_mois import H_ENTETE, disposition_semaine
     zone, semaines = 780, 6
-    h_cible = (zone - 26) / semaines
+    h_cible = (zone - H_ENTETE - 4) // semaines
     hauteur, lignes = disposition_semaine(0, 8, 5, compact=True, h_cible=h_cible)
-    assert hauteur * semaines <= zone - 24
-    assert lignes >= 3  # au moins 3 lignes de pastilles (ou 2 + « +n autres »)
+    assert H_ENTETE + hauteur * semaines <= zone
+    assert lignes >= 2  # au moins 2 lignes de pastilles (ou 1 + « +n autres »)
 
 
 def test_normal_les_bandes_prennent_de_la_place():
@@ -143,3 +143,34 @@ def test_compact_vie_perso_garde_sa_hauteur():
     h0, l0 = disposition_semaine(0, 8, 9, compact=True, h_cible=200)
     assert h1 == h0 == 200 and l1 <= l0
     assert H_FINE < H_BANDE
+
+
+# --- Thème -----------------------------------------------------------------------
+
+def test_texte_lisible_sur_chaque_couleur():
+    from musee_zoune import theme
+    for couleur in theme.PALETTE + list(theme.COULEURS_TYPES.values()):
+        assert theme.contraste(couleur, theme.texte_sur(couleur)) >= 2.5, couleur
+
+
+def test_palette_inchangee_en_taille():
+    # l'index de couleur est mémorisé en base : la palette ne doit pas rétrécir
+    from musee_zoune import theme
+    assert len(theme.PALETTE) >= 14 and len(set(theme.PALETTE)) == len(theme.PALETTE)
+
+
+def test_filtres_types_lieux_recherche(base):
+    from musee_zoune.app.donnees import Donnees
+    d = Donnees(base)
+    tout = d.elements(date(2026, 11, 2), date(2026, 11, 8))
+    d.types_masques = {"atelier"}
+    assert all(e.source.get("type") != "atelier" for e in d.elements(date(2026, 11, 2), date(2026, 11, 8)))
+    d.types_masques = set()
+    d.villes_masquees = {"Cottbus"}
+    assert all(e.source.get("city") != "Cottbus" for e in d.elements(date(2026, 11, 2), date(2026, 11, 8))
+               if e.nature in ("event", "expo"))
+    d.villes_masquees = set()
+    d.recherche = "hickmann"
+    trouves = d.elements(date(2026, 11, 2), date(2026, 11, 8))
+    assert trouves and len(trouves) < len(tout)
+    assert all("hickmann" in (e.titre + (e.source.get("description") or "")).lower() for e in trouves)

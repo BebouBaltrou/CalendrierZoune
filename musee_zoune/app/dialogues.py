@@ -195,14 +195,16 @@ class ListePerso(QDialog):
 
 
 class DialoguePost(QDialog):
-    """Ajout ou modification d'un post lié à un événement."""
+    """Création / modification d'un post, lié à zéro, un ou plusieurs événements."""
 
-    def __init__(self, conn, parent=None, event: dict | None = None, post: dict | None = None):
+    def __init__(self, conn, parent=None, post: dict | None = None, precoches=()):
         super().__init__(parent)
-        self.conn, self.event, self.post = conn, event, post
+        self.conn, self.post = conn, post
         self.setWindowTitle(t("post_modifier" if post else "post_nouveau"))
-        self.setMinimumWidth(380)
+        self.resize(560, 640)
 
+        self.titre = QLineEdit()
+        self.titre.setPlaceholderText(t("post_titre_aide"))
         self.reseau = QComboBox()
         for code in db.RESEAUX:
             self.reseau.addItem(t("reseau_" + code), code)
@@ -213,45 +215,105 @@ class DialoguePost(QDialog):
         for code in db.STATUTS_POST:
             self.statut.addItem(t("post_statut_" + code), code)
         self.note = QTextEdit()
-        self.note.setFixedHeight(70)
+        self.note.setFixedHeight(60)
 
+        coches = set(post["evenements"]) if post else set(precoches)
         if post:
+            self.titre.setText(post.get("titre", ""))
             self.reseau.setCurrentIndex(max(0, self.reseau.findData(post["reseau"])))
             jour = date.fromisoformat(post["date"][:10])
             self.statut.setCurrentIndex(max(0, self.statut.findData(post["statut"])))
             self.note.setPlainText(post.get("note", ""))
         else:
-            # par défaut : une semaine avant l'événement, mais pas avant aujourd'hui
-            debut = cal.dt(event["start"]).date()
-            jour = max(date.today(), debut - timedelta(days=7))
+            jour = date.today()
+            premiers = [cal.dt(r[0]).date() for r in conn.execute(
+                f"SELECT start FROM events WHERE uid IN ({','.join('?' * len(coches))})", list(coches))]                 if coches else []
+            if premiers:  # par défaut : une semaine avant le premier événement coché
+                jour = max(date.today(), min(premiers) - timedelta(days=7))
         self.date.setDate(QDate(jour.year, jour.month, jour.day))
 
+        # événements à cocher
+        self.recherche = QLineEdit()
+        self.recherche.setPlaceholderText(t("post_recherche_evenement"))
+        self.recherche.textChanged.connect(self._filtrer)
+        self.liste = QListWidget()
+        self.liste.itemChanged.connect(self._compter)
+        self.liste.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.liste.setTextElideMode(Qt.ElideRight)
+        self.compteur = QLabel()
+        self.compteur.setStyleSheet("color:#9AA0A6;")
+        limite = (date.today() - timedelta(days=60)).isoformat()
+        lignes = conn.execute(
+            """SELECT uid, title, type, start, end, city FROM events
+               WHERE status != 'retire' AND (COALESCE(NULLIF(end, ''), start) >= ? OR uid IN (%s))
+               ORDER BY start""" % ",".join("?" * len(coches)) if coches else
+            """SELECT uid, title, type, start, end, city FROM events
+               WHERE status != 'retire' AND COALESCE(NULLIF(end, ''), start) >= ? ORDER BY start""",
+            [limite, *coches] if coches else [limite])
+        self.liste.blockSignals(True)
+        for r in lignes:
+            debut = cal.dt(r["start"])
+            texte = f"{debut:%d/%m/%Y}  {r['title']}  ·  {t('type_' + r['type'])}"
+            if r["city"]:
+                texte += f" · {r['city']}"
+            item = QListWidgetItem(texte)
+            item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if r["uid"] in coches else Qt.Unchecked)
+            item.setData(Qt.UserRole, r["uid"])
+            item.setData(Qt.UserRole + 1, cal.normaliser(texte))
+            self.liste.addItem(item)
+        self.liste.blockSignals(False)
+        self._compter()
+        premier_coche = next((self.liste.item(i) for i in range(self.liste.count())
+                              if self.liste.item(i).checkState() == Qt.Checked), None)
+        if premier_coche:
+            self.liste.scrollToItem(premier_coche, QListWidget.PositionAtCenter)
+
         form = QFormLayout()
-        if event:
-            titre = QLabel(t("post_pour", titre=event["title"]))
-            titre.setWordWrap(True)
-            titre.setStyleSheet("font-weight:bold;")
-            form.addRow(titre)
+        form.addRow(t("post_champ_titre"), self.titre)
         form.addRow(t("post_champ_reseau"), self.reseau)
         form.addRow(t("post_champ_date"), self.date)
         form.addRow(t("post_champ_statut"), self.statut)
         form.addRow(t("post_champ_note"), self.note)
+        titre_ev = QLabel(t("post_evenements"))
+        titre_ev.setStyleSheet("font-weight:600; padding-top:8px;")
 
         boutons = QDialogButtonBox()
-        boutons.addButton(t("bouton_ok"), QDialogButtonBox.AcceptRole)
+        boutons.addButton(t("bouton_ok"), QDialogButtonBox.AcceptRole).setDefault(True)
         boutons.addButton(t("bouton_annuler"), QDialogButtonBox.RejectRole)
         boutons.accepted.connect(self._enregistrer)
         boutons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addWidget(titre_ev)
+        layout.addWidget(self.recherche)
+        layout.addWidget(self.liste, 1)
+        layout.addWidget(self.compteur)
         layout.addWidget(boutons)
+
+    def evenements_coches(self) -> list[str]:
+        return [self.liste.item(i).data(Qt.UserRole) for i in range(self.liste.count())
+                if self.liste.item(i).checkState() == Qt.Checked]
+
+    def _filtrer(self, texte: str) -> None:
+        mots = cal.normaliser(texte).split()
+        for i in range(self.liste.count()):
+            item = self.liste.item(i)
+            cible = item.data(Qt.UserRole + 1)
+            item.setHidden(bool(mots) and not all(m in cible for m in mots))
+
+    def _compter(self, *_):
+        n = len(self.evenements_coches())
+        self.compteur.setText(t("post_n_coches", n=n) if n else t("post_aucun_coche"))
 
     def _enregistrer(self) -> None:
         d = self.date.date()
         jour = date(d.year(), d.month(), d.day()).isoformat()
-        valeurs = (self.reseau.currentData(), jour, self.statut.currentData(), self.note.toPlainText())
+        valeurs = dict(reseau=self.reseau.currentData(), date_=jour, statut=self.statut.currentData(),
+                       note=self.note.toPlainText(), titre=self.titre.text(),
+                       evenements=self.evenements_coches())
         if self.post:
-            db.modifier_post(self.conn, self.post["id"], *valeurs)
+            db.modifier_post(self.conn, self.post["id"], **valeurs)
         else:
-            db.ajouter_post(self.conn, self.event["uid"], *valeurs)
+            db.ajouter_post(self.conn, **valeurs)
         self.accept()

@@ -254,8 +254,7 @@ class DialogueExport(QDialog):
             return
         try:
             exporter(self.fenetre.conn, chemin, vue, jour, compact=self.compact.isChecked(),
-                     avec_perso=self.perso.isChecked(), ville=self.fenetre.donnees.ville,
-                     expos_masquees=self.fenetre.donnees.expos_masquees)
+                     avec_perso=self.perso.isChecked(), modele=self.fenetre.donnees)
         except Exception as exc:  # noqa: BLE001 — fichier ouvert ailleurs, droits…
             QMessageBox.warning(self, t("export_titre"), t("export_erreur", erreur=exc))
             return

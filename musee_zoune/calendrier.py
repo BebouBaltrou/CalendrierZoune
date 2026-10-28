@@ -13,27 +13,11 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-# Couleurs des expositions : teintes franches mais claires (texte noir lisible).
-PALETTE = [
-    "#F4A261", "#7FB3D5", "#82C99B", "#E59AC4", "#D9C45A", "#A99BDB", "#E88A8A",
-    "#6EC5C0", "#D4A373", "#A3C96B", "#F2A7C3", "#8FA8E8", "#E8B86A", "#B992DB",
-]
+# Couleurs : voir theme.py (fichier unique pour toute l'interface).
+from . import theme  # noqa: E402
+from .theme import COULEUR_PERSO, COULEURS_TYPES, PALETTE, SOMBRE  # noqa: E402
 
-# Événements sans exposition liée : tons neutres selon le type.
-COULEURS_TYPES = {
-    "atelier": "#D3D8DD",
-    "visite": "#CBD5DF",
-    "vernissage": "#E3D0D0",
-    "concert": "#E4D8C3",
-    "evenement": "#DDD3E6",
-    "annonce": "#DDDDDD",
-    "autre": "#DDDDDD",
-    "exposition": "#DDDDDD",
-}
-
-# Vie de Zoune : violet, toujours hachuré + bord pointillé dans l'interface.
-COULEUR_PERSO = "#7E57C2"
-COULEUR_PERSO_FOND = "#EDE7F6"
+COULEUR_PERSO_FOND = SOMBRE.perso_fond
 
 
 # --------------------------------------------------------------------------

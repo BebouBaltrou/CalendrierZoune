@@ -70,17 +70,22 @@ CREATE TABLE IF NOT EXISTS expo_couleurs (
     couleur   INTEGER NOT NULL   -- index dans la palette
 );
 
--- Posts de communication associés à un événement ou une exposition
+-- Posts de communication. Un post peut couvrir zéro, un ou plusieurs événements.
 CREATE TABLE IF NOT EXISTS posts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_uid  TEXT NOT NULL REFERENCES events(uid),
+    titre      TEXT NOT NULL DEFAULT '',   -- utile surtout pour les posts « libres »
     reseau     TEXT NOT NULL,              -- instagram / facebook / newsletter / autre
     date       TEXT NOT NULL,              -- AAAA-MM-JJ (date prévue ou de publication)
     statut     TEXT NOT NULL DEFAULT 'prevu',  -- prevu / publie
     note       TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_posts_event ON posts(event_uid);
+CREATE TABLE IF NOT EXISTS post_events (
+    post_id    INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    event_uid  TEXT NOT NULL REFERENCES events(uid),
+    PRIMARY KEY (post_id, event_uid)
+);
+CREATE INDEX IF NOT EXISTS idx_post_events_uid ON post_events(event_uid);
 
 -- Réglages : langue, dernier changement consulté…
 CREATE TABLE IF NOT EXISTS reglages (
@@ -109,7 +114,32 @@ def connecter(chemin: Path | str = config.CHEMIN_BASE) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    migrer(conn)
     return conn
+
+
+def migrer(conn: sqlite3.Connection) -> None:
+    """Met à jour une base créée par une version précédente."""
+    colonnes = {r[1] for r in conn.execute("PRAGMA table_info(posts)")}
+    if "event_uid" in colonnes:
+        # v0.3 : un post = un événement (posts.event_uid) -> table de liaison post_events
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.executescript("""
+            BEGIN;
+            CREATE TABLE posts_v2 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, titre TEXT NOT NULL DEFAULT '',
+                reseau TEXT NOT NULL, date TEXT NOT NULL, statut TEXT NOT NULL DEFAULT 'prevu',
+                note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+            INSERT INTO posts_v2 (id, titre, reseau, date, statut, note, created_at)
+                SELECT id, '', reseau, date, statut, note, created_at FROM posts;
+            INSERT OR IGNORE INTO post_events (post_id, event_uid)
+                SELECT id, event_uid FROM posts WHERE event_uid IS NOT NULL;
+            DROP INDEX IF EXISTS idx_posts_event;
+            DROP TABLE posts;
+            ALTER TABLE posts_v2 RENAME TO posts;
+            COMMIT;
+        """)
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 def ligne_vers_dict(ligne: sqlite3.Row) -> dict:
@@ -315,47 +345,84 @@ def _verifier_post(reseau: str, date_: str, statut: str) -> None:
     datetime.fromisoformat(date_)  # lève ValueError si la date est invalide
 
 
-def ajouter_post(conn: sqlite3.Connection, event_uid: str, reseau: str, date_: str,
-                 statut: str = "prevu", note: str = "") -> int:
+def _lier(conn: sqlite3.Connection, post_id: int, evenements) -> None:
+    conn.execute("DELETE FROM post_events WHERE post_id=?", (post_id,))
+    conn.executemany("INSERT OR IGNORE INTO post_events (post_id, event_uid) VALUES (?, ?)",
+                     [(post_id, uid) for uid in dict.fromkeys(evenements)])
+
+
+def ajouter_post(conn: sqlite3.Connection, reseau: str, date_: str, statut: str = "prevu",
+                 note: str = "", titre: str = "", evenements=()) -> int:
+    """Crée un post lié à 0, 1 ou plusieurs événements (uids)."""
     _verifier_post(reseau, date_, statut)
     cur = conn.execute(
-        "INSERT INTO posts (event_uid, reseau, date, statut, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (event_uid, reseau, date_, statut, note, datetime.now().isoformat(timespec="seconds")),
+        "INSERT INTO posts (titre, reseau, date, statut, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (titre.strip(), reseau, date_, statut, note, datetime.now().isoformat(timespec="seconds")),
     )
+    _lier(conn, cur.lastrowid, evenements)
     conn.commit()
     return cur.lastrowid
 
 
-def modifier_post(conn: sqlite3.Connection, id_: int, reseau: str, date_: str,
-                  statut: str, note: str = "") -> None:
+def modifier_post(conn: sqlite3.Connection, id_: int, reseau: str, date_: str, statut: str,
+                  note: str = "", titre: str = "", evenements=None) -> None:
+    """`evenements=None` : liens inchangés ; liste (même vide) : liens remplacés."""
     _verifier_post(reseau, date_, statut)
-    conn.execute("UPDATE posts SET reseau=?, date=?, statut=?, note=? WHERE id=?",
-                 (reseau, date_, statut, note, id_))
+    conn.execute("UPDATE posts SET titre=?, reseau=?, date=?, statut=?, note=? WHERE id=?",
+                 (titre.strip(), reseau, date_, statut, note, id_))
+    if evenements is not None:
+        _lier(conn, id_, evenements)
     conn.commit()
 
 
 def supprimer_post(conn: sqlite3.Connection, id_: int) -> None:
+    conn.execute("DELETE FROM post_events WHERE post_id=?", (id_,))
     conn.execute("DELETE FROM posts WHERE id=?", (id_,))
     conn.commit()
 
 
+def _post_dict(conn: sqlite3.Connection, ligne: sqlite3.Row) -> dict:
+    d = dict(ligne)
+    d["evenements"] = [r[0] for r in conn.execute(
+        "SELECT event_uid FROM post_events WHERE post_id=? ORDER BY event_uid", (d["id"],))]
+    return d
+
+
 def lire_post(conn: sqlite3.Connection, id_: int) -> dict | None:
     ligne = conn.execute("SELECT * FROM posts WHERE id=?", (id_,)).fetchone()
-    return dict(ligne) if ligne else None
+    return _post_dict(conn, ligne) if ligne else None
 
 
 def posts_de(conn: sqlite3.Connection, event_uid: str) -> list[dict]:
-    lignes = conn.execute("SELECT * FROM posts WHERE event_uid=? ORDER BY date, id", (event_uid,))
-    return [dict(r) for r in lignes]
+    """Posts qui couvrent explicitement cet événement."""
+    lignes = conn.execute(
+        """SELECT p.* FROM posts p JOIN post_events pe ON pe.post_id = p.id
+           WHERE pe.event_uid=? ORDER BY p.date, p.id""", (event_uid,))
+    return [_post_dict(conn, r) for r in lignes]
+
+
+def tous_posts(conn: sqlite3.Connection) -> list[dict]:
+    return [_post_dict(conn, r) for r in conn.execute("SELECT * FROM posts ORDER BY date DESC, id DESC")]
+
+
+def posts_libres_entre(conn: sqlite3.Connection, debut: str, fin: str) -> list[dict]:
+    """Posts sans événement dont la date tombe dans [debut, fin[ (affichés dans le calendrier)."""
+    lignes = conn.execute(
+        """SELECT * FROM posts p WHERE p.date >= ? AND p.date < ?
+             AND NOT EXISTS (SELECT 1 FROM post_events pe WHERE pe.post_id = p.id)
+           ORDER BY p.date, p.id""", (debut[:10], fin[:10]))
+    return [_post_dict(conn, r) for r in lignes]
 
 
 def etat_posts(conn: sqlite3.Connection) -> dict[str, str]:
     """uid -> 'publie' (au moins un post publié) ou 'prevu' (seulement prévus).
 
+    Un événement n'est couvert que s'il est explicitement lié à un post.
     Les événements absents du dictionnaire n'ont aucun post.
     """
     lignes = conn.execute(
-        "SELECT event_uid, MAX(statut = 'publie') AS publie FROM posts GROUP BY event_uid")
+        """SELECT pe.event_uid, MAX(p.statut = 'publie') AS publie
+           FROM post_events pe JOIN posts p ON p.id = pe.post_id GROUP BY pe.event_uid""")
     return {r["event_uid"]: "publie" if r["publie"] else "prevu" for r in lignes}
 
 
@@ -366,7 +433,7 @@ def a_poster(conn: sqlite3.Connection, aujourdhui: date_cls, jours: int = 7) -> 
     lignes = conn.execute(
         """SELECT * FROM events e
            WHERE e.status = 'prevu' AND e.start >= ? AND e.start < ?
-             AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.event_uid = e.uid)
+             AND NOT EXISTS (SELECT 1 FROM post_events pe WHERE pe.event_uid = e.uid)
            ORDER BY e.start""",
         (debut, fin),
     )

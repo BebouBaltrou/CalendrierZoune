@@ -36,12 +36,19 @@ class Element:
 
 
 class Donnees:
+    """Modèle commun aux vues : événements, vie perso et posts libres, après filtres."""
+
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
-        self.ville: str | None = None
+        self.ville: str | None = None              # filtre « un seul lieu » (export)
+        self.villes_masquees: set[str] = set()
+        self.types_masques: set[str] = set()       # types d'événements décochés
         self.expos_masquees: set[str] = set()
+        self.perso_masques: set[str] = set()       # types de vie perso décochés
         self.sans_post_seulement = False
         self.avec_perso = True
+        self.avec_posts_libres = True
+        self.recherche = ""
         self.recharger()
 
     def recharger(self) -> None:
@@ -58,26 +65,44 @@ class Donnees:
 
     def villes(self) -> list[str]:
         lignes = self.conn.execute(
-            "SELECT DISTINCT city FROM events WHERE city != '' ORDER BY city")
+            "SELECT DISTINCT city FROM events WHERE city != '' AND status != 'retire' ORDER BY city")
         return [r[0] for r in lignes]
+
+    def types(self) -> list[str]:
+        presents = {r[0] for r in self.conn.execute(
+            "SELECT DISTINCT type FROM events WHERE status != 'retire'")}
+        ordre = ["exposition", "vernissage", "visite", "atelier", "concert", "evenement", "annonce", "autre"]
+        return [t_ for t_ in ordre if t_ in presents]
 
     def couleur_expo(self, uid: str) -> str:
         return cal.PALETTE[self.couleurs.get(uid, 0) % len(cal.PALETTE)]
 
     # ------------------------------------------------------------------
 
+    def _ville_ok(self, ville: str | None) -> bool:
+        if self.ville and ville != self.ville:
+            return False
+        return (ville or "") not in self.villes_masquees
+
+    def _recherche_ok(self, *textes: str | None) -> bool:
+        if not self.recherche.strip():
+            return True
+        cible = cal.normaliser(" ".join(x or "" for x in textes))
+        return all(mot in cible for mot in cal.normaliser(self.recherche).split())
+
     def elements(self, debut: date, fin: date) -> list[Element]:
-        """Tout ce qui chevauche [debut, fin] (inclus)."""
+        """Tout ce qui chevauche [debut, fin] (inclus), filtres appliqués."""
         d, f = debut.isoformat(), (fin + timedelta(days=1)).isoformat()
         resultat = []
         etats = db.etat_posts(self.conn)
         for ev in db.evenements_entre(self.conn, d, f):
-            if self.ville and ev.get("city") != self.ville:
-                continue
-            if self.sans_post_seulement and ev["uid"] in etats:
-                continue
             est_expo = ev["type"] == "exposition"
-            if est_expo and ev["uid"] in self.expos_masquees:
+            if (not self._ville_ok(ev.get("city"))
+                    or ev["type"] in self.types_masques
+                    or (est_expo and ev["uid"] in self.expos_masquees)
+                    or (self.sans_post_seulement and ev["uid"] in etats)
+                    or not self._recherche_ok(ev["title"], ev.get("venue"), ev.get("city"),
+                                              ev.get("description"))):
                 continue
             resultat.append(Element(
                 cle=f"ev:{ev['uid']}",
@@ -92,30 +117,42 @@ class Donnees:
                 source=ev,
                 etat_post=etats.get(ev["uid"]),
             ))
-        for p in (db.perso_entre(self.conn, d, f) if self.avec_perso else []):
-            resultat.append(Element(
-                cle=f"perso:{p['id']}",
-                nature="perso",
-                titre=p["titre"],
-                couleur=cal.COULEUR_PERSO,
-                debut=cal.dt(p["debut"]),
-                fin=cal.dt(p["fin"]),
-                journee=p["journee"],
-                source=p,
-            ))
+        if self.avec_perso:
+            for p in db.perso_entre(self.conn, d, f):
+                if p["type"] in self.perso_masques or not self._recherche_ok(p["titre"], p.get("note")):
+                    continue
+                resultat.append(Element(
+                    cle=f"perso:{p['id']}", nature="perso", titre=p["titre"],
+                    couleur=cal.COULEUR_PERSO, debut=cal.dt(p["debut"]), fin=cal.dt(p["fin"]),
+                    journee=p["journee"], source=p,
+                ))
+        if self.avec_posts_libres and not self.sans_post_seulement:
+            for post in db.posts_libres_entre(self.conn, d, f):
+                if not self._recherche_ok(post["titre"], post.get("note")):
+                    continue
+                jour = datetime.fromisoformat(post["date"][:10])
+                resultat.append(Element(
+                    cle=f"post:{post['id']}", nature="post", titre=titre_post(post),
+                    couleur=cal.theme.COULEUR_ACCENT, debut=jour, fin=jour, journee=True, source=post,
+                ))
         return resultat
 
     def expos_visibles(self, debut: date, fin: date) -> list[dict]:
-        """Expositions de la période (pour la légende), filtre de lieu appliqué."""
+        """Expositions de la période (colonne de gauche, légende du PDF)."""
         resultat = []
         for e in self.expos:
             premier, dernier = cal.jours_de(e)
-            if dernier < debut or premier > fin:
-                continue
-            if self.ville and e.get("city") != self.ville:
+            if dernier < debut or premier > fin or not self._ville_ok(e.get("city")):
                 continue
             resultat.append(e)
         return resultat
+
+
+def titre_post(post: dict) -> str:
+    """« Instagram · Newsletter de novembre » (ou le réseau seul)."""
+    from ..textes import t
+    reseau = t("reseau_" + post["reseau"])
+    return f"{reseau} · {post['titre']}" if post.get("titre") else reseau
 
 
 def periode_perso(debut: date, fin: date, journee: bool,
