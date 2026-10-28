@@ -1,0 +1,23 @@
+"""Réglages de l'application."""
+
+from pathlib import Path
+
+RACINE = Path(__file__).resolve().parent.parent
+DOSSIER_DONNEES = RACINE / "data"
+CHEMIN_BASE = DOSSIER_DONNEES / "musee.db"
+CHEMIN_JOURNAL = DOSSIER_DONNEES / "sync.log"
+
+SITE = "https://www.blmk.de"
+URL_CALENDRIER = f"{SITE}/kalender/"
+URL_API = f"{SITE}/wp-json/tribe/events/v1/events"
+FUSEAU = "Europe/Berlin"
+
+USER_AGENT = "MuseeZoune/0.1 (outil interne de la communication BLMK)"
+DELAI_ENTRE_REQUETES = 1.0  # secondes, une requête à la fois
+TIMEOUT = 30
+PAR_PAGE = 50
+MAX_PAGES = 20
+
+# En dessous de cette proportion d'événements actifs retrouvés,
+# on considère que le site a eu un problème et on ne marque rien comme annulé.
+SEUIL_PRUDENCE = 0.5
