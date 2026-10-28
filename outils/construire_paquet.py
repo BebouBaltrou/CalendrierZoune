@@ -132,7 +132,9 @@ def copier_source(dossier: Path) -> None:
     """Code source suivi par git (sans .venv, data, dist, build)."""
     archive = RACINE / "build" / "source.zip"
     archive.parent.mkdir(exist_ok=True)
-    subprocess.run(["git", "archive", "--format=zip", "-o", str(archive), "HEAD"], check=True, cwd=RACINE)
+    # captures et PDF d'exemple (docs/) exclus : ce n'est pas du code et ça alourdit le zip
+    subprocess.run(["git", "archive", "--format=zip", "-o", str(archive), "HEAD", "--", ".",
+                    ":(exclude)docs"], check=True, cwd=RACINE)
     with zipfile.ZipFile(archive) as z:
         z.extractall(dossier)
 
@@ -172,14 +174,23 @@ Der vollständige Quellcode liegt im Ordner „source“ (AGPL-Lizenz von PyMuPD
 VERSIONS = RACINE / "versions"  # empreintes des versions publiées (suivi par git)
 
 
-def _empreinte(donnees: bytes) -> str:
+def _empreinte(donnees: bytes, nom: str = "") -> str:
+    """sha256 du fichier ; pour une archive .zip (base_library.zip), du contenu de chaque
+    membre, car PyInstaller la recompresse à l'identique mais pas octet pour octet."""
     import hashlib
+    import io
+    if nom.endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(donnees)) as z:
+            h = hashlib.sha256()
+            for membre in sorted(z.namelist()):
+                h.update(membre.encode() + b"\0" + hashlib.sha256(z.read(membre)).digest())
+            return "zip:" + h.hexdigest()
     return hashlib.sha256(donnees).hexdigest()
 
 
 def manifeste_dossier(dossier: Path) -> dict[str, str]:
     """{chemin relatif : sha256} de tous les fichiers de l'application."""
-    return {f.relative_to(dossier).as_posix(): _empreinte(f.read_bytes())
+    return {f.relative_to(dossier).as_posix(): _empreinte(f.read_bytes(), f.name)
             for f in sorted(dossier.rglob("*")) if f.is_file()}
 
 
@@ -190,7 +201,7 @@ def manifeste_zip(chemin_zip: Path) -> dict[str, str]:
         for nom in z.namelist():
             morceaux = nom.split("/", 2)
             if len(morceaux) == 3 and morceaux[1] == "Musee Zoune" and not nom.endswith("/"):
-                resultat[morceaux[2]] = _empreinte(z.read(nom))
+                resultat[morceaux[2]] = _empreinte(z.read(nom), nom)
     return resultat
 
 
