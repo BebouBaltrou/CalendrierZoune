@@ -93,3 +93,14 @@ def test_simulation_n_enregistre_rien(scrapes):
     synchroniser(c, scrapes, "html", MAINTENANT, simulation=True)
     assert c.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
     c.close()
+
+
+def test_sync_necessaire_une_fois_par_jour(scrapes):
+    from musee_zoune.sync import sync_necessaire
+
+    c = db.connecter(":memory:")
+    assert sync_necessaire(c, MAINTENANT)  # jamais synchronisé
+    synchroniser(c, scrapes, "html", MAINTENANT)
+    assert not sync_necessaire(c, MAINTENANT.replace(hour=23))  # même jour
+    assert sync_necessaire(c, datetime(2026, 10, 29, 8, 0))  # lendemain
+    c.close()

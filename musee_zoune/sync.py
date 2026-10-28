@@ -1,7 +1,8 @@
 """Synchronise la programmation du site avec la base locale.
 
 Usage :
-    python -m musee_zoune.sync              # synchronisation normale
+    python -m musee_zoune.sync              # synchronisation (bouton « Actualiser »)
+    python -m musee_zoune.sync --si-necessaire  # seulement si pas encore faite aujourd'hui
     python -m musee_zoune.sync --simulation # affiche les changements sans rien enregistrer
 """
 
@@ -156,37 +157,72 @@ def configurer_journal() -> None:
     )
 
 
+def derniere_sync(conn: sqlite3.Connection) -> datetime | None:
+    """Date de la dernière synchronisation réussie (None si jamais)."""
+    ligne = conn.execute("SELECT MAX(at) FROM sync_runs").fetchone()
+    return datetime.fromisoformat(ligne[0]) if ligne and ligne[0] else None
+
+
+def sync_necessaire(conn: sqlite3.Connection, maintenant: datetime | None = None) -> bool:
+    """Vrai si aucune synchronisation réussie n'a eu lieu aujourd'hui."""
+    maintenant = maintenant or datetime.now()
+    derniere = derniere_sync(conn)
+    return derniere is None or derniere.date() < maintenant.date()
+
+
+def lancer_sync(forcer: bool = True, simulation: bool = False, afficher=print) -> dict | None:
+    """Point d'entrée commun à la ligne de commande et à l'application.
+
+    - Au démarrage de l'application : `lancer_sync(forcer=False)` -> ne fait
+      rien si une synchronisation a déjà réussi aujourd'hui.
+    - Bouton « Actualiser » : `lancer_sync(forcer=True)`.
+    Renvoie le résumé, ou None si rien n'a été fait. Lève une exception si le
+    site est injoignable (rien n'est enregistré : on réessaiera au prochain lancement).
+    """
+    conn = db.connecter()
+    try:
+        if not forcer and not sync_necessaire(conn):
+            derniere = derniere_sync(conn)
+            afficher(t("sync_deja_faite", heure=derniere.strftime("%H:%M")))
+            return None
+
+        afficher(t("sync_debut", url=config.URL_CALENDRIER))
+        try:
+            evenements, source, erreur_api = recuperer_programmation()
+        except Exception as exc:
+            log.warning("échec de la récupération : %s", exc)
+            raise
+        if erreur_api:
+            log.warning("API indisponible : %s", erreur_api)
+            afficher(t("sync_erreur_api", erreur=erreur_api))
+        afficher(t("sync_source_" + source, n=len(evenements)))
+
+        maintenant = datetime.now()
+        resume = synchroniser(conn, evenements, source, maintenant, simulation=simulation)
+    finally:
+        conn.close()
+    afficher("\n" + formater_resume(resume, maintenant))
+    if simulation:
+        afficher("\n" + t("sync_simulation"))
+    log.info("sync %s : %s", resume["source"],
+             {k: len(v) if isinstance(v, list) else v for k, v in resume.items()})
+    return resume
+
+
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Synchronise la programmation du BLMK.")
     parser.add_argument("--simulation", action="store_true", help="n'enregistre rien")
+    parser.add_argument("--si-necessaire", action="store_true",
+                        help="ne fait rien si une synchronisation a déjà réussi aujourd'hui")
     args = parser.parse_args(argv)
     configurer_journal()
-
-    print(t("sync_debut", url=config.URL_CALENDRIER))
     try:
-        evenements, source, erreur_api = recuperer_programmation()
+        lancer_sync(forcer=not args.si_necessaire, simulation=args.simulation)
     except Exception as exc:  # noqa: BLE001 — message clair pour l'utilisateur
-        log.exception("échec de la récupération")
         print(t("sync_erreur_totale", erreur=exc))
         return 1
-    if erreur_api:
-        log.warning("API indisponible : %s", erreur_api)
-        print(t("sync_erreur_api", erreur=erreur_api))
-    print(t("sync_source_" + source, n=len(evenements)))
-
-    maintenant = datetime.now()
-    conn = db.connecter()
-    try:
-        resume = synchroniser(conn, evenements, source, maintenant, simulation=args.simulation)
-    finally:
-        conn.close()
-    texte = formater_resume(resume, maintenant)
-    print("\n" + texte)
-    if args.simulation:
-        print("\n" + t("sync_simulation"))
-    log.info("sync %s : %s", source, {k: len(v) if isinstance(v, list) else v for k, v in resume.items()})
     return 0
 
 

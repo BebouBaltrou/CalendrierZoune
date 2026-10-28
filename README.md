@@ -15,7 +15,22 @@ py -m venv .venv
 .venv\Scripts\python -m pytest                        # tests
 ```
 
-Synchronisation quotidienne automatique : `planifier_sync.ps1` (voir l'en-tête du script).
+La synchronisation se fait automatiquement au premier lancement de l'application dans la journée
+(et via le bouton « Actualiser »). En ligne de commande : `python -m musee_zoune.sync --si-necessaire`.
+
+## Étape 2 : application de bureau
+
+Double-cliquer sur `lancer.bat` (crée l'environnement Python au premier lancement).
+Ou : `.venv\Scripts\python -m musee_zoune.app`.
+
+- Vue **Mois** : expositions en bandes colorées sur leur période, autres événements en pastilles.
+  Les visites et vernissages prennent la couleur de leur exposition.
+- Vue **Semaine** : créneaux horaires, titre complet, lieu, type ; clic = détails.
+- **Vie de Zoune** : vacances, week-ends, rendez-vous (hachurés violets). Double-clic sur un jour
+  (vue mois) ou un créneau (vue semaine) pour en ajouter ; bouton « Vie de Zoune… » pour la liste.
+- **Changements** : bandeau + panneau des ajouts / modifications / annulations non lus.
+- Langue FR / DE (menu en haut à droite, mémorisée).
+- Captures : `docs/captures/` (régénérer avec `.venv\Scripts\python outils\captures.py docs\captures`).
 
 ### Sources
 
@@ -26,7 +41,9 @@ Synchronisation quotidienne automatique : `planifier_sync.ps1` (voir l'en-tête 
 ### Fichiers
 
 - `musee_zoune/scraper.py` : téléchargement et parsing
-- `musee_zoune/db.py` : schéma SQLite (`events`, `changes`, `sync_runs`)
+- `musee_zoune/db.py` : schéma SQLite (`events`, `changes`, `sync_runs`, `vie_perso`, `expo_couleurs`, `reglages`)
 - `musee_zoune/sync.py` : comparaison et résumé
-- `musee_zoune/textes.py` : tous les textes affichés (FR, DE à venir)
+- `musee_zoune/textes.py` : tous les textes affichés (FR et DE)
 - `musee_zoune/config.py` : réglages
+- `musee_zoune/calendrier.py` : couleurs des expositions, liens expo, mise en page (sans Qt)
+- `musee_zoune/app/` : interface PySide6 (fenêtre, vues mois/semaine, panneaux, dialogues)

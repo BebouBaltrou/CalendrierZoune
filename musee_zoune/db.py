@@ -49,7 +49,33 @@ CREATE TABLE IF NOT EXISTS sync_runs (
     total     INTEGER NOT NULL,
     summary   TEXT NOT NULL DEFAULT '{}'
 );
+
+-- Vie de Zoune : vacances, week-ends, rendez-vous perso
+CREATE TABLE IF NOT EXISTS vie_perso (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    titre     TEXT NOT NULL,
+    type      TEXT NOT NULL DEFAULT 'autre',  -- vacances / weekend / rdv / autre
+    debut     TEXT NOT NULL,   -- AAAA-MM-JJTHH:MM
+    fin       TEXT NOT NULL,
+    journee   INTEGER NOT NULL DEFAULT 1,     -- 1 = journée(s) entière(s)
+    note      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_vie_perso_debut ON vie_perso(debut);
+
+-- Couleur attribuée une fois pour toutes à chaque exposition
+CREATE TABLE IF NOT EXISTS expo_couleurs (
+    uid       TEXT PRIMARY KEY,
+    couleur   INTEGER NOT NULL   -- index dans la palette
+);
+
+-- Réglages : langue, dernier changement consulté…
+CREATE TABLE IF NOT EXISTS reglages (
+    cle       TEXT PRIMARY KEY,
+    valeur    TEXT NOT NULL
+);
 """
+
+TYPES_PERSO = ("vacances", "weekend", "rdv", "autre")
 
 # Champs comparés d'une synchronisation à l'autre.
 CHAMPS_SUIVIS = (
@@ -131,3 +157,131 @@ def derniers_changements(conn: sqlite3.Connection, limite: int = 50) -> list[dic
         (limite,),
     )
     return [{**dict(r), "details": json.loads(r["details"])} for r in lignes]
+
+
+# --------------------------------------------------------------------------
+# Lecture pour l'application
+# --------------------------------------------------------------------------
+
+def evenements_entre(conn: sqlite3.Connection, debut: str, fin: str) -> list[dict]:
+    """Événements visibles (pas retirés) qui chevauchent [debut, fin[."""
+    lignes = conn.execute(
+        """SELECT * FROM events
+           WHERE status IN ('prevu', 'annule', 'reporte', 'passe')
+             AND start < ? AND COALESCE(NULLIF(end, ''), start) >= ?
+           ORDER BY start""",
+        (fin, debut),
+    )
+    return [ligne_vers_dict(r) for r in lignes]
+
+
+def expositions(conn: sqlite3.Connection) -> list[dict]:
+    lignes = conn.execute(
+        "SELECT * FROM events WHERE type='exposition' AND status != 'retire' ORDER BY start")
+    return [ligne_vers_dict(r) for r in lignes]
+
+
+def changements_depuis(conn: sqlite3.Connection, apres_id: int) -> list[dict]:
+    lignes = conn.execute(
+        """SELECT c.*, e.title, e.start, e.end, e.type, e.url FROM changes c
+           JOIN events e ON e.uid = c.event_uid
+           WHERE c.id > ? ORDER BY c.at DESC, e.start""",
+        (apres_id,),
+    )
+    return [{**dict(r), "details": json.loads(r["details"])} for r in lignes]
+
+
+def dernier_changement_id(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COALESCE(MAX(id), 0) FROM changes").fetchone()[0]
+
+
+# --------------------------------------------------------------------------
+# Réglages
+# --------------------------------------------------------------------------
+
+def lire_reglage(conn: sqlite3.Connection, cle: str, defaut: str | None = None) -> str | None:
+    ligne = conn.execute("SELECT valeur FROM reglages WHERE cle=?", (cle,)).fetchone()
+    return ligne[0] if ligne else defaut
+
+
+def ecrire_reglage(conn: sqlite3.Connection, cle: str, valeur: str) -> None:
+    conn.execute(
+        "INSERT INTO reglages (cle, valeur) VALUES (?, ?) "
+        "ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur",
+        (cle, valeur),
+    )
+    conn.commit()
+
+
+# --------------------------------------------------------------------------
+# Couleurs des expositions
+# --------------------------------------------------------------------------
+
+def couleurs_expos(conn: sqlite3.Connection) -> dict[str, int]:
+    return {r["uid"]: r["couleur"] for r in conn.execute("SELECT * FROM expo_couleurs")}
+
+
+def enregistrer_couleurs(conn: sqlite3.Connection, couleurs: dict[str, int]) -> None:
+    conn.executemany(
+        "INSERT OR IGNORE INTO expo_couleurs (uid, couleur) VALUES (?, ?)", couleurs.items())
+    conn.commit()
+
+
+# --------------------------------------------------------------------------
+# Vie de Zoune (CRUD)
+# --------------------------------------------------------------------------
+
+def _verifier_perso(titre: str, type_: str, debut: str, fin: str) -> None:
+    if not titre.strip():
+        raise ValueError("titre vide")
+    if type_ not in TYPES_PERSO:
+        raise ValueError(f"type inconnu : {type_}")
+    if fin < debut:
+        raise ValueError("fin avant début")
+
+
+def ajouter_perso(conn: sqlite3.Connection, titre: str, type_: str, debut: str, fin: str,
+                  journee: bool = True, note: str = "") -> int:
+    _verifier_perso(titre, type_, debut, fin)
+    cur = conn.execute(
+        "INSERT INTO vie_perso (titre, type, debut, fin, journee, note) VALUES (?, ?, ?, ?, ?, ?)",
+        (titre.strip(), type_, debut, fin, int(journee), note),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def modifier_perso(conn: sqlite3.Connection, id_: int, titre: str, type_: str, debut: str,
+                   fin: str, journee: bool = True, note: str = "") -> None:
+    _verifier_perso(titre, type_, debut, fin)
+    conn.execute(
+        "UPDATE vie_perso SET titre=?, type=?, debut=?, fin=?, journee=?, note=? WHERE id=?",
+        (titre.strip(), type_, debut, fin, int(journee), note, id_),
+    )
+    conn.commit()
+
+
+def supprimer_perso(conn: sqlite3.Connection, id_: int) -> None:
+    conn.execute("DELETE FROM vie_perso WHERE id=?", (id_,))
+    conn.commit()
+
+
+def lire_perso(conn: sqlite3.Connection, id_: int) -> dict | None:
+    ligne = conn.execute("SELECT * FROM vie_perso WHERE id=?", (id_,)).fetchone()
+    return _perso_dict(ligne) if ligne else None
+
+
+def perso_entre(conn: sqlite3.Connection, debut: str, fin: str) -> list[dict]:
+    lignes = conn.execute(
+        "SELECT * FROM vie_perso WHERE debut < ? AND fin >= ? ORDER BY debut", (fin, debut))
+    return [_perso_dict(r) for r in lignes]
+
+
+def tout_perso(conn: sqlite3.Connection) -> list[dict]:
+    return [_perso_dict(r) for r in conn.execute("SELECT * FROM vie_perso ORDER BY debut")]
+
+
+def _perso_dict(ligne: sqlite3.Row) -> dict:
+    d = dict(ligne)
+    d["journee"] = bool(d["journee"])
+    return d

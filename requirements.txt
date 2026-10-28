@@ -1,5 +1,5 @@
 requests>=2.31
 beautifulsoup4>=4.12
 pytest>=8.0
-# Interface graphique (étape suivante, pas encore installée) :
-# PySide6>=6.7
+# Interface graphique
+PySide6>=6.7
