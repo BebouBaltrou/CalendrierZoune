@@ -91,6 +91,9 @@ def _autotest(app: QApplication, fenetre: FenetrePrincipale, rapport: Path) -> N
             r = compression.compresser(pdf, compression.PREREGLAGES["mail"])
             resultat["export_pdf"] = pdf.stat().st_size
             resultat["compression_pdf"] = {"ok": r.ok, "message": r.message}
+            from PySide6.QtCore import QEventLoop
+            for _ in range(5):
+                app.processEvents(QEventLoop.AllEvents, 50)
             fenetre.grab().save(str(dossier / "autotest.png"))
             resultat["ok"] = True
         except Exception:  # noqa: BLE001
