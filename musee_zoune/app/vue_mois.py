@@ -184,7 +184,8 @@ class VueMois(QWidget):
                     continue
                 style.dessiner_fond(p, r, el, 2)
                 titre = ("◂ " if b.coupe_gauche else "") + el.titre
-                style.dessiner_texte(p, r, titre, el, 8, gras=el.nature == "expo")
+                place = style.dessiner_indicateur(p, r, el)
+                style.dessiner_texte(p, r.adjusted(0, 0, -place, 0), titre, el, 8, gras=el.nature == "expo")
                 self._contour_selection(p, r, el)
                 self._zones.append((r, el))
 
@@ -198,7 +199,8 @@ class VueMois(QWidget):
                     r = QRectF(i * lj + 2, y0 + k * H_PASTILLE, lj - 4, H_PASTILLE - 2)
                     style.dessiner_fond(p, r, el, 3)
                     heure = el.debut.strftime("%H:%M") if el.debut.date() == jour else "…"
-                    style.dessiner_texte(p, r, f"{heure} {el.titre}", el, 8)
+                    place = style.dessiner_indicateur(p, r, el)
+                    style.dessiner_texte(p, r.adjusted(0, 0, -place, 0), f"{heure} {el.titre}", el, 8)
                     self._contour_selection(p, r, el)
                     self._zones.append((r, el))
                 reste = len(ponctuels) - len(visibles)

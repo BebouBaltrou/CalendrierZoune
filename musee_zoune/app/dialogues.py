@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 from PySide6.QtCore import QDate, QDateTime, QTime, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
+    QCheckBox, QComboBox, QDateEdit, QDateTimeEdit, QDialog, QLabel, QDialogButtonBox, QFormLayout, QHBoxLayout,
     QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QTextEdit, QVBoxLayout,
 )
 
@@ -192,3 +192,66 @@ class ListePerso(QDialog):
             db.supprimer_perso(self.conn, element["id"])
             self.modifie = True
             self._remplir()
+
+
+class DialoguePost(QDialog):
+    """Ajout ou modification d'un post lié à un événement."""
+
+    def __init__(self, conn, parent=None, event: dict | None = None, post: dict | None = None):
+        super().__init__(parent)
+        self.conn, self.event, self.post = conn, event, post
+        self.setWindowTitle(t("post_modifier" if post else "post_nouveau"))
+        self.setMinimumWidth(380)
+
+        self.reseau = QComboBox()
+        for code in db.RESEAUX:
+            self.reseau.addItem(t("reseau_" + code), code)
+        self.date = QDateEdit()
+        self.date.setCalendarPopup(True)
+        self.date.setDisplayFormat("dd/MM/yyyy")
+        self.statut = QComboBox()
+        for code in db.STATUTS_POST:
+            self.statut.addItem(t("post_statut_" + code), code)
+        self.note = QTextEdit()
+        self.note.setFixedHeight(70)
+
+        if post:
+            self.reseau.setCurrentIndex(max(0, self.reseau.findData(post["reseau"])))
+            jour = date.fromisoformat(post["date"][:10])
+            self.statut.setCurrentIndex(max(0, self.statut.findData(post["statut"])))
+            self.note.setPlainText(post.get("note", ""))
+        else:
+            # par défaut : une semaine avant l'événement, mais pas avant aujourd'hui
+            debut = cal.dt(event["start"]).date()
+            jour = max(date.today(), debut - timedelta(days=7))
+        self.date.setDate(QDate(jour.year, jour.month, jour.day))
+
+        form = QFormLayout()
+        if event:
+            titre = QLabel(t("post_pour", titre=event["title"]))
+            titre.setWordWrap(True)
+            titre.setStyleSheet("font-weight:bold;")
+            form.addRow(titre)
+        form.addRow(t("post_champ_reseau"), self.reseau)
+        form.addRow(t("post_champ_date"), self.date)
+        form.addRow(t("post_champ_statut"), self.statut)
+        form.addRow(t("post_champ_note"), self.note)
+
+        boutons = QDialogButtonBox()
+        boutons.addButton(t("bouton_ok"), QDialogButtonBox.AcceptRole)
+        boutons.addButton(t("bouton_annuler"), QDialogButtonBox.RejectRole)
+        boutons.accepted.connect(self._enregistrer)
+        boutons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(boutons)
+
+    def _enregistrer(self) -> None:
+        d = self.date.date()
+        jour = date(d.year(), d.month(), d.day()).isoformat()
+        valeurs = (self.reseau.currentData(), jour, self.statut.currentData(), self.note.toPlainText())
+        if self.post:
+            db.modifier_post(self.conn, self.post["id"], *valeurs)
+        else:
+            db.ajouter_post(self.conn, self.event["uid"], *valeurs)
+        self.accept()

@@ -6,18 +6,18 @@ import logging
 from datetime import date, datetime, timedelta
 
 from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QComboBox, QDockWidget, QLabel, QMainWindow, QPushButton, QScrollArea, QSizePolicy,
-    QStackedWidget, QToolBar, QVBoxLayout, QWidget,
+    QStackedWidget, QSystemTrayIcon, QToolBar, QVBoxLayout, QWidget,
 )
 
 from .. import db, textes
 from ..sync import derniere_sync, lancer_sync, sync_necessaire
 from ..textes import date_lisible, nom_mois, t
 from .dialogues import DialoguePerso, ListePerso
-from .donnees import Donnees, Element
-from .panneaux import Changements, Details, Legende
+from .donnees import Donnees, Element, noter_notification, notification_a_faire
+from .panneaux import APoster, Changements, Details, Legende
 from .vue_mois import VueMois
 from .vue_semaine import VueSemaine
 
@@ -81,6 +81,12 @@ class FenetrePrincipale(QMainWindow):
             "QPushButton { background:#FFF4D6; border:none; border-bottom:1px solid #E8D9A8;"
             " padding:6px; text-align:left; font-weight:bold; color:#6B4E00; }")
         self.bandeau.clicked.connect(self._montrer_changements)
+        self.bandeau_aposter = QPushButton()
+        self.bandeau_aposter.setCursor(Qt.PointingHandCursor)
+        self.bandeau_aposter.setStyleSheet(
+            "QPushButton { background:#FFE8D6; border:none; border-bottom:1px solid #F2B98F;"
+            " padding:6px; text-align:left; font-weight:bold; color:#8A3B00; }")
+        self.bandeau_aposter.clicked.connect(self._montrer_aposter)
         self.titre_periode = QLabel()
         self.titre_periode.setStyleSheet("font-size:18px; font-weight:bold; padding:6px 8px;")
         centre = QWidget()
@@ -88,6 +94,7 @@ class FenetrePrincipale(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self.bandeau)
+        layout.addWidget(self.bandeau_aposter)
         layout.addWidget(self.titre_periode)
         layout.addWidget(self.pile)
         self.setCentralWidget(centre)
@@ -96,10 +103,13 @@ class FenetrePrincipale(QMainWindow):
         self.legende = Legende(self.donnees)
         self.details = Details(self.donnees)
         self.changements = Changements(conn)
+        self.aposter = APoster(conn)
         self.dock_legende = self._dock(self.legende, Qt.LeftDockWidgetArea)
         self.dock_details = self._dock(self.details, Qt.RightDockWidgetArea)
         self.dock_chg = self._dock(self.changements, Qt.RightDockWidgetArea)
+        self.dock_aposter = self._dock(self.aposter, Qt.RightDockWidgetArea)
         self.tabifyDockWidget(self.dock_details, self.dock_chg)
+        self.tabifyDockWidget(self.dock_chg, self.dock_aposter)
         self.dock_legende.setMinimumWidth(260)
         self.dock_details.setMinimumWidth(330)
 
@@ -118,13 +128,20 @@ class FenetrePrincipale(QMainWindow):
         self.details.modifier_perso.connect(self._modifier_perso)
         self.changements.evenement_choisi.connect(self._evenement_choisi)
         self.changements.compteur_change.connect(self._compteur)
+        self.details.posts_modifies.connect(self._posts_modifies)
+        self.aposter.evenement_choisi.connect(self._evenement_choisi)
+        self.aposter.compteur_change.connect(self._compteur_aposter)
+        self.icone_notif = self._icone_notification()
 
         self._barre_defilement_mois()
         self.retraduire()
         self.dock_chg.raise_() if self._non_lus() else self.dock_details.raise_()
         self._etat_sync_initial()
+        self.aposter.remplir()
         if synchroniser_au_demarrage and sync_necessaire(conn):
-            self.synchroniser(forcer=False)
+            self.synchroniser(forcer=False)  # le rappel sera notifié après la synchro
+        elif synchroniser_au_demarrage:
+            self.notifier_a_poster()
 
     # ------------------------------------------------------------------ construction
 
@@ -164,6 +181,10 @@ class FenetrePrincipale(QMainWindow):
         barre.addWidget(self.lbl_ville)
         barre.addWidget(self.combo_ville)
         barre.addSeparator()
+        self.act_sans_post = QAction(self, checkable=True)
+        self.act_sans_post.toggled.connect(self._filtre_sans_post)
+        barre.addAction(self.act_sans_post)
+        barre.addSeparator()
         self.act_perso = barre.addAction("", self._liste_perso)
         espace = QWidget()
         espace.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -189,6 +210,8 @@ class FenetrePrincipale(QMainWindow):
         self.act_compact.setText(t("vue_compact"))
         self.act_compact.setToolTip(t("vue_compact_aide"))
         self.act_perso.setText(t("perso_gerer"))
+        self.act_sans_post.setText("● " + t("filtre_sans_post"))
+        self.act_sans_post.setToolTip(t("filtre_sans_post_aide"))
         self.act_actualiser.setText("⟳ " + t("sync_bouton_actualiser"))
         self.lbl_ville.setText(t("filtre_ville") + " ")
         self.lbl_langue.setText(t("langue") + " ")
@@ -197,6 +220,8 @@ class FenetrePrincipale(QMainWindow):
         self._remplir_villes()
         self.details.afficher(self.details.element)
         self.changements.remplir()
+        if hasattr(self, "aposter"):
+            self.aposter.remplir()
         self._rafraichir_vues()
 
     def _remplir_villes(self) -> None:
@@ -266,6 +291,10 @@ class FenetrePrincipale(QMainWindow):
         if self.vue_semaine_active():
             self._changer_vue(0)
 
+    def _filtre_sans_post(self, actif: bool) -> None:
+        self.donnees.sans_post_seulement = actif
+        self._rafraichir_vues()
+
     def _ville(self) -> None:
         self.donnees.ville = self.combo_ville.currentData()
         self._rafraichir_vues()
@@ -328,6 +357,55 @@ class FenetrePrincipale(QMainWindow):
         self.bandeau.setVisible(n > 0)
         self.bandeau.setText(f"● {t('chg_bandeau', n=n)}")
 
+    def _compteur_aposter(self, n: int) -> None:
+        self.dock_aposter.setWindowTitle(t("aposter_compteur", n=n) if n else t("aposter_titre"))
+        self.bandeau_aposter.setVisible(n > 0)
+        self.bandeau_aposter.setText(f"● {t('aposter_bandeau', n=n)}")
+
+    def _montrer_aposter(self) -> None:
+        self.dock_aposter.show()
+        self.dock_aposter.raise_()
+
+    def _posts_modifies(self) -> None:
+        self.aposter.remplir()
+        self.vue_mois.recalculer() if not self.vue_semaine_active() else self.vue_semaine.recalculer()
+        self._rafraichir_vues()
+
+    def _icone_notification(self) -> QSystemTrayIcon | None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return None
+        pix = QPixmap(32, 32)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(QColor("#7E57C2"))
+        p.setPen(Qt.NoPen)
+        p.drawRoundedRect(2, 2, 28, 28, 7, 7)
+        p.setPen(QColor("white"))
+        f = p.font()
+        f.setBold(True)
+        f.setPointSize(15)
+        p.setFont(f)
+        p.drawText(pix.rect(), Qt.AlignCenter, "Z")
+        p.end()
+        icone = QSystemTrayIcon(QIcon(pix), self)
+        icone.setToolTip("Musée Zoune")
+        icone.activated.connect(lambda _r: (self.showNormal(), self.activateWindow(), self._montrer_aposter()))
+        icone.messageClicked.connect(lambda: (self.showNormal(), self.activateWindow(), self._montrer_aposter()))
+        icone.show()
+        return icone
+
+    def notifier_a_poster(self) -> None:
+        """Notification Windows discrète, une seule fois par jour, s'il reste des posts à faire."""
+        aujourdhui = date.today()
+        n = len(self.aposter.evenements)
+        if n == 0 or not notification_a_faire(self.conn, aujourdhui):
+            return
+        if self.icone_notif is not None:
+            self.icone_notif.showMessage(t("aposter_notif_titre"), t("aposter_notif", n=n),
+                                         QSystemTrayIcon.Information, 8000)
+        noter_notification(self.conn, aujourdhui)
+
     def _montrer_changements(self) -> None:
         self.dock_chg.show()
         self.dock_chg.raise_()
@@ -354,7 +432,9 @@ class FenetrePrincipale(QMainWindow):
         self.donnees.recharger()
         self._remplir_villes()
         self.changements.remplir()
+        self.aposter.remplir()
         self._rafraichir_vues()
+        self.notifier_a_poster()
         self.message_statut.setStyleSheet("")
         if resume is None:
             self._etat_sync_initial()
@@ -362,6 +442,7 @@ class FenetrePrincipale(QMainWindow):
             self.message_statut.setText(t("statut_sync_ok", heure=datetime.now().strftime("%H:%M")))
 
     def _sync_echec(self, _erreur: str) -> None:
+        self.notifier_a_poster()  # hors ligne : rappel avec les données en base
         derniere = derniere_sync(self.conn)
         self.message_statut.setText(
             t("statut_hors_ligne", date=derniere.strftime("%d/%m/%Y %H:%M")) if derniere

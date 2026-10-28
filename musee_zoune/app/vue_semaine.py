@@ -112,8 +112,9 @@ class VueSemaine(QWidget):
             r = QRectF(x0, H_ENTETE + b.piste * H_BANDE, x1 - x0, H_BANDE - 3)
             style.dessiner_fond(p, r, el, 3)
             texte = ("◂ " if b.coupe_gauche else "") + el.titre
-            style.dessiner_texte(p, r.adjusted(0, 0, -12 if b.coupe_droite else 0, 0), texte, el, 8.5,
-                                 gras=el.nature == "expo")
+            place = style.dessiner_indicateur(p, r.adjusted(0, 0, -12 if b.coupe_droite else 0, 0), el)
+            style.dessiner_texte(p, r.adjusted(0, 0, -(12 if b.coupe_droite else 0) - place, 0), texte, el,
+                                 8.5, gras=el.nature == "expo")
             if b.coupe_droite:
                 p.setFont(style.police(8))
                 p.setPen(style.COULEUR_TEXTE)
@@ -150,7 +151,8 @@ class VueSemaine(QWidget):
                 largeur = (lj - 4) / n
                 r = QRectF(L_HEURES + i * lj + 2 + col * largeur, y0 + 1, largeur - 2, y1 - y0 - 2)
                 style.dessiner_fond(p, r, el, 4)
-                self._texte_bloc(p, r, el)
+                place = style.dessiner_indicateur(p, r, el, en_haut=True)
+                self._texte_bloc(p, r.adjusted(0, 0, -place, 0), el)
                 self._contour(p, r, el)
                 self._zones.append((r, el))
         p.end()

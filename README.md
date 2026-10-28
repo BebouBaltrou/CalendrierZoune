@@ -31,6 +31,17 @@ Ou : `.venv\Scripts\python -m musee_zoune.app`.
   (vue mois) ou un créneau (vue semaine) pour en ajouter ; bouton « Vie de Zoune… » pour la liste.
 - **Changements** : bandeau + panneau des ajouts / modifications / annulations non lus.
 - Langue FR / DE (menu en haut à droite, mémorisée).
+
+## Étape 3 : suivi des posts et rappels
+
+- **Posts** : dans le panneau Détails d'un événement ou d'une exposition, « Ajouter un post… »
+  (réseau Instagram / Facebook / newsletter / autre, date, statut prévu / publié, note).
+- **Indicateur** sur les événements à venir, dans les deux vues : pastille orange = pas encore de post,
+  cercle bleu = post prévu, coche verte = post publié. Bouton « ● Sans post » pour ne voir que ceux-là.
+- **À poster** : onglet + bandeau orange listant les événements des 7 prochains jours sans aucun post,
+  mis à jour au lancement et après chaque synchronisation.
+- **Notification Windows** (zone de notification) une fois par jour, au premier lancement, s'il reste
+  des événements à poster.
 - Captures : `docs/captures/` (régénérer avec `.venv\Scripts\python outils\captures.py docs\captures`).
 
 ### Sources
@@ -42,7 +53,7 @@ Ou : `.venv\Scripts\python -m musee_zoune.app`.
 ### Fichiers
 
 - `musee_zoune/scraper.py` : téléchargement et parsing
-- `musee_zoune/db.py` : schéma SQLite (`events`, `changes`, `sync_runs`, `vie_perso`, `expo_couleurs`, `reglages`)
+- `musee_zoune/db.py` : schéma SQLite (`events`, `changes`, `sync_runs`, `vie_perso`, `posts`, `expo_couleurs`, `reglages`)
 - `musee_zoune/sync.py` : comparaison et résumé
 - `musee_zoune/textes.py` : tous les textes affichés (FR et DE)
 - `musee_zoune/config.py` : réglages

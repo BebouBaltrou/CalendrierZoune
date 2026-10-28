@@ -33,6 +33,16 @@ def copie_base() -> sqlite3.Connection:
     for titre, type_, d, f, journee, hd, hf in exemples:
         debut, fin = periode_perso(d, f, journee, hd or time(0, 0), hf or time(23, 59))
         db.ajouter_perso(conn, titre, type_, debut, fin, journee)
+    # quelques posts d'exemple
+    def uid(debut, jour=""):
+        return conn.execute("SELECT uid FROM events WHERE title LIKE ? AND start LIKE ? ORDER BY start",
+                            (debut + "%", jour + "%")).fetchone()[0]
+    db.ajouter_post(conn, "programm/fons-hickmann", "instagram", "2026-10-02", "publie", "Carrousel des affiches")
+    db.ajouter_post(conn, "programm/fons-hickmann", "newsletter", "2026-11-20", "prevu")
+    fuehrung = uid("Führung – in „Ungebremste")
+    db.ajouter_post(conn, fuehrung, "instagram", "2026-10-30", "prevu", "Story + rappel la veille")
+    db.ajouter_post(conn, fuehrung, "facebook", "2026-10-29", "publie")
+    db.ajouter_post(conn, uid("Ferienkurs – Manga", "2026-10-29"), "facebook", "2026-10-25", "publie")
     return conn
 
 
@@ -72,6 +82,16 @@ def main() -> None:
             fenetre.aller_a(date(2026, 11, 2), vue=0)
             capturer(fenetre, sortie / "vue_mois_compact_fr.png")
             fenetre.act_compact.setChecked(False)
+            fenetre.aller_a(date(2026, 10, 26), vue=1)
+            el = next(e for e in fenetre.vue_semaine.elements if "Fons Hickmann" in e.titre and e.nature == "expo")
+            fenetre._element_clique(el)
+            capturer(fenetre, sortie / "posts_details_fr.png")
+            fenetre._montrer_aposter()
+            capturer(fenetre, sortie / "a_poster_fr.png")
+            fenetre.act_sans_post.setChecked(True)
+            fenetre.aller_a(date(2026, 11, 2), vue=0)
+            capturer(fenetre, sortie / "filtre_sans_post_fr.png")
+            fenetre.act_sans_post.setChecked(False)
             fenetre.aller_a(date(2026, 11, 2), vue=1)
             fenetre.dock_chg.raise_()
             capturer(fenetre, sortie / "changements_fr.png")

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import date as date_cls
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import config
@@ -68,6 +70,18 @@ CREATE TABLE IF NOT EXISTS expo_couleurs (
     couleur   INTEGER NOT NULL   -- index dans la palette
 );
 
+-- Posts de communication associés à un événement ou une exposition
+CREATE TABLE IF NOT EXISTS posts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_uid  TEXT NOT NULL REFERENCES events(uid),
+    reseau     TEXT NOT NULL,              -- instagram / facebook / newsletter / autre
+    date       TEXT NOT NULL,              -- AAAA-MM-JJ (date prévue ou de publication)
+    statut     TEXT NOT NULL DEFAULT 'prevu',  -- prevu / publie
+    note       TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_posts_event ON posts(event_uid);
+
 -- Réglages : langue, dernier changement consulté…
 CREATE TABLE IF NOT EXISTS reglages (
     cle       TEXT PRIMARY KEY,
@@ -76,6 +90,8 @@ CREATE TABLE IF NOT EXISTS reglages (
 """
 
 TYPES_PERSO = ("vacances", "weekend", "rdv", "autre")
+RESEAUX = ("instagram", "facebook", "newsletter", "autre")
+STATUTS_POST = ("prevu", "publie")
 
 # Champs comparés d'une synchronisation à l'autre.
 CHAMPS_SUIVIS = (
@@ -285,3 +301,73 @@ def _perso_dict(ligne: sqlite3.Row) -> dict:
     d = dict(ligne)
     d["journee"] = bool(d["journee"])
     return d
+
+
+# --------------------------------------------------------------------------
+# Posts
+# --------------------------------------------------------------------------
+
+def _verifier_post(reseau: str, date_: str, statut: str) -> None:
+    if reseau not in RESEAUX:
+        raise ValueError(f"réseau inconnu : {reseau}")
+    if statut not in STATUTS_POST:
+        raise ValueError(f"statut inconnu : {statut}")
+    datetime.fromisoformat(date_)  # lève ValueError si la date est invalide
+
+
+def ajouter_post(conn: sqlite3.Connection, event_uid: str, reseau: str, date_: str,
+                 statut: str = "prevu", note: str = "") -> int:
+    _verifier_post(reseau, date_, statut)
+    cur = conn.execute(
+        "INSERT INTO posts (event_uid, reseau, date, statut, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (event_uid, reseau, date_, statut, note, datetime.now().isoformat(timespec="seconds")),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def modifier_post(conn: sqlite3.Connection, id_: int, reseau: str, date_: str,
+                  statut: str, note: str = "") -> None:
+    _verifier_post(reseau, date_, statut)
+    conn.execute("UPDATE posts SET reseau=?, date=?, statut=?, note=? WHERE id=?",
+                 (reseau, date_, statut, note, id_))
+    conn.commit()
+
+
+def supprimer_post(conn: sqlite3.Connection, id_: int) -> None:
+    conn.execute("DELETE FROM posts WHERE id=?", (id_,))
+    conn.commit()
+
+
+def lire_post(conn: sqlite3.Connection, id_: int) -> dict | None:
+    ligne = conn.execute("SELECT * FROM posts WHERE id=?", (id_,)).fetchone()
+    return dict(ligne) if ligne else None
+
+
+def posts_de(conn: sqlite3.Connection, event_uid: str) -> list[dict]:
+    lignes = conn.execute("SELECT * FROM posts WHERE event_uid=? ORDER BY date, id", (event_uid,))
+    return [dict(r) for r in lignes]
+
+
+def etat_posts(conn: sqlite3.Connection) -> dict[str, str]:
+    """uid -> 'publie' (au moins un post publié) ou 'prevu' (seulement prévus).
+
+    Les événements absents du dictionnaire n'ont aucun post.
+    """
+    lignes = conn.execute(
+        "SELECT event_uid, MAX(statut = 'publie') AS publie FROM posts GROUP BY event_uid")
+    return {r["event_uid"]: "publie" if r["publie"] else "prevu" for r in lignes}
+
+
+def a_poster(conn: sqlite3.Connection, aujourdhui: date_cls, jours: int = 7) -> list[dict]:
+    """Événements prévus qui commencent dans les `jours` prochains jours et n'ont aucun post."""
+    debut = aujourdhui.isoformat()
+    fin = (aujourdhui + timedelta(days=jours + 1)).isoformat()
+    lignes = conn.execute(
+        """SELECT * FROM events e
+           WHERE e.status = 'prevu' AND e.start >= ? AND e.start < ?
+             AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.event_uid = e.uid)
+           ORDER BY e.start""",
+        (debut, fin),
+    )
+    return [ligne_vers_dict(r) for r in lignes]

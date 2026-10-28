@@ -22,6 +22,7 @@ class Element:
     annule: bool = False
     expo_liee: str | None = None
     source: dict = field(default_factory=dict)
+    etat_post: str | None = None   # None = aucun post, "prevu", "publie"
 
     @property
     def premier_jour(self) -> date:
@@ -39,6 +40,7 @@ class Donnees:
         self.conn = conn
         self.ville: str | None = None
         self.expos_masquees: set[str] = set()
+        self.sans_post_seulement = False
         self.recharger()
 
     def recharger(self) -> None:
@@ -67,8 +69,11 @@ class Donnees:
         """Tout ce qui chevauche [debut, fin] (inclus)."""
         d, f = debut.isoformat(), (fin + timedelta(days=1)).isoformat()
         resultat = []
+        etats = db.etat_posts(self.conn)
         for ev in db.evenements_entre(self.conn, d, f):
             if self.ville and ev.get("city") != self.ville:
+                continue
+            if self.sans_post_seulement and ev["uid"] in etats:
                 continue
             est_expo = ev["type"] == "exposition"
             if est_expo and ev["uid"] in self.expos_masquees:
@@ -84,6 +89,7 @@ class Donnees:
                 annule=ev["status"] in ("annule", "reporte"),
                 expo_liee=self.liens.get(ev["uid"]),
                 source=ev,
+                etat_post=etats.get(ev["uid"]),
             ))
         for p in db.perso_entre(self.conn, d, f):
             resultat.append(Element(
@@ -119,3 +125,23 @@ def periode_perso(debut: date, fin: date, journee: bool,
                 datetime.combine(fin, time(23, 59)).isoformat(timespec="minutes"))
     return (datetime.combine(debut, heure_debut).isoformat(timespec="minutes"),
             datetime.combine(fin, heure_fin).isoformat(timespec="minutes"))
+
+
+def notification_a_faire(conn: sqlite3.Connection, aujourdhui: date) -> bool:
+    """Vrai si le rappel « à poster » n'a pas encore été notifié aujourd'hui."""
+    return db.lire_reglage(conn, "derniere_notif_a_poster") != aujourdhui.isoformat()
+
+
+def noter_notification(conn: sqlite3.Connection, aujourdhui: date) -> None:
+    db.ecrire_reglage(conn, "derniere_notif_a_poster", aujourdhui.isoformat())
+
+
+def echeance(jour: date, aujourdhui: date) -> str:
+    """« aujourd'hui », « demain », « dans 3 jours »."""
+    from ..textes import t
+    n = (jour - aujourdhui).days
+    if n <= 0:
+        return t("aposter_aujourdhui")
+    if n == 1:
+        return t("aposter_demain")
+    return t("aposter_dans", n=n)

@@ -62,3 +62,44 @@ def dessiner_texte(p: QPainter, rect: QRectF, texte: str, el: Element, taille: f
         texte = p.fontMetrics().elidedText(texte, Qt.ElideRight, int(zone.width()))
         p.drawText(zone, Qt.AlignLeft | Qt.AlignVCenter, texte)
     p.restore()
+
+
+COULEUR_SANS_POST = QColor("#E8590C")
+COULEUR_POST_PREVU = QColor("#1971C2")
+COULEUR_POST_PUBLIE = QColor("#2B8A3E")
+TAILLE_INDICATEUR = 9
+
+
+def a_un_indicateur(el: Element) -> bool:
+    """Indicateur de post sur les événements du musée encore à venir."""
+    from datetime import date
+    return el.nature in ("event", "expo") and el.fin.date() >= date.today() and not el.annule
+
+
+def dessiner_indicateur(p: QPainter, rect: QRectF, el: Element, en_haut: bool = False) -> float:
+    """Pastille à droite de `rect` : orange plein = pas de post, cercle bleu = prévu,
+    coche verte = publié. Renvoie la largeur occupée (0 si rien)."""
+    if not a_un_indicateur(el):
+        return 0
+    d = TAILLE_INDICATEUR
+    x = rect.right() - d - 3
+    y = rect.top() + 3 if en_haut else rect.center().y() - d / 2
+    zone = QRectF(x, y, d, d)
+    p.save()
+    if el.etat_post is None:
+        p.setPen(QPen(QColor("white"), 1.2))
+        p.setBrush(COULEUR_SANS_POST)
+        p.drawEllipse(zone)
+    elif el.etat_post == "prevu":
+        p.setPen(QPen(COULEUR_POST_PREVU, 1.8))
+        p.setBrush(QColor("white"))
+        p.drawEllipse(zone)
+    else:
+        p.setPen(Qt.NoPen)
+        p.setBrush(COULEUR_POST_PUBLIE)
+        p.drawEllipse(zone)
+        p.setPen(QPen(QColor("white"), 1.6))
+        p.drawLine(zone.left() + 2.2, zone.center().y(), zone.center().x() - 0.5, zone.bottom() - 2.2)
+        p.drawLine(zone.center().x() - 0.5, zone.bottom() - 2.2, zone.right() - 2, zone.top() + 2.2)
+    p.restore()
+    return d + 4

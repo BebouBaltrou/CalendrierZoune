@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import html
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QLabel, QListWidget, QListWidgetItem, QPushButton, QTextBrowser, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QTextBrowser,
+    QVBoxLayout, QWidget,
 )
 
 from .. import calendrier as cal
 from .. import db
 from ..textes import date_lisible, t
-from .donnees import Donnees, Element
+from .donnees import Donnees, Element, echeance
 
 
 def pastille(couleur: str, perso: bool = False, taille: int = 14) -> QIcon:
@@ -33,6 +34,21 @@ def pastille(couleur: str, perso: bool = False, taille: int = 14) -> QIcon:
         p.setBrush(QColor(couleur))
         p.setPen(QPen(QColor(couleur).darker(130)))
         p.drawRoundedRect(1, 1, taille - 2, taille - 2, 3, 3)
+    p.end()
+    return QIcon(pix)
+
+
+def indicateur_icone(etat: str | None) -> QIcon:
+    """Petite icône reprenant l'indicateur de post des vues."""
+    from . import style
+    pix = QPixmap(14, 14)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+    maintenant = datetime.now()
+    faux = Element("x", "event", "", "#ffffff", maintenant, maintenant + timedelta(days=1),
+                   False, etat_post=etat)
+    style.dessiner_indicateur(p, QRectF(0, 0, 15, 14), faux)
     p.end()
     return QIcon(pix)
 
@@ -84,7 +100,10 @@ class Legende(QWidget):
             item.setData(Qt.UserRole, expo["uid"])
             self.liste.addItem(item)
         for icone, texte in ((pastille(cal.COULEURS_TYPES["atelier"]), t("legende_autres")),
-                             (pastille("", perso=True), t("legende_vie_perso"))):
+                             (pastille("", perso=True), t("legende_vie_perso")),
+                             (indicateur_icone(None), t("legende_sans_post")),
+                             (indicateur_icone("prevu"), t("legende_post_prevu")),
+                             (indicateur_icone("publie"), t("legende_post_publie"))):
             item = QListWidgetItem(icone, texte)
             item.setFlags(Qt.ItemIsEnabled)
             item.setForeground(QColor("#555"))
@@ -110,6 +129,7 @@ class Legende(QWidget):
 
 class Details(QWidget):
     modifier_perso = Signal(int)
+    posts_modifies = Signal()
 
     def __init__(self, donnees: Donnees, parent=None):
         super().__init__(parent)
@@ -119,16 +139,106 @@ class Details(QWidget):
         self.texte.setOpenExternalLinks(True)
         self.bouton = QPushButton()
         self.bouton.clicked.connect(lambda: self.modifier_perso.emit(self.element.source["id"]))
+
+        # section « Posts »
+        self.bloc_posts = QWidget()
+        self.titre_posts = QLabel()
+        self.titre_posts.setStyleSheet("font-weight:bold; margin-top:4px;")
+        self.liste_posts = QListWidget()
+        self.liste_posts.setMaximumHeight(160)
+        self.liste_posts.setWordWrap(True)
+        self.liste_posts.setIconSize(QSize(12, 12))
+        self.liste_posts.itemDoubleClicked.connect(lambda _i: self._modifier_post())
+        self.btn_ajouter = QPushButton()
+        self.btn_modifier = QPushButton()
+        self.btn_supprimer = QPushButton()
+        self.btn_ajouter.clicked.connect(self._ajouter_post)
+        self.btn_modifier.clicked.connect(self._modifier_post)
+        self.btn_supprimer.clicked.connect(self._supprimer_post)
+        ligne = QHBoxLayout()
+        for b in (self.btn_ajouter, self.btn_modifier, self.btn_supprimer):
+            ligne.addWidget(b)
+        bloc = QVBoxLayout(self.bloc_posts)
+        bloc.setContentsMargins(0, 0, 0, 0)
+        bloc.addWidget(self.titre_posts)
+        bloc.addWidget(self.liste_posts)
+        bloc.addLayout(ligne)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.addWidget(self.texte)
+        layout.addWidget(self.texte, 1)
         layout.addWidget(self.bouton)
+        layout.addWidget(self.bloc_posts)
         self.afficher(None)
+
+    # -- posts ------------------------------------------------------------
+
+    def _remplir_posts(self) -> None:
+        self.titre_posts.setText(t("post_titre"))
+        self.btn_ajouter.setText(t("post_ajouter"))
+        self.btn_modifier.setText(t("details_modifier"))
+        self.btn_supprimer.setText(t("post_supprimer"))
+        self.liste_posts.clear()
+        posts = db.posts_de(self.donnees.conn, self.element.source["uid"]) if self.element else []
+        if not posts:
+            item = QListWidgetItem(indicateur_icone(None), t("post_aucun"))
+            item.setFlags(Qt.NoItemFlags)
+            item.setForeground(QColor("#C04A00"))
+            self.liste_posts.addItem(item)
+        for post in posts:
+            jour = date_lisible(date.fromisoformat(post["date"][:10]), longue=True)
+            texte = f"{t('reseau_' + post['reseau'])} — {jour} — {t('post_statut_' + post['statut'])}"
+            if post["note"]:
+                texte += "\n" + post["note"]
+            item = QListWidgetItem(indicateur_icone(post["statut"]), texte)
+            item.setData(Qt.UserRole, post["id"])
+            self.liste_posts.addItem(item)
+        if posts:
+            self.liste_posts.setCurrentRow(0)
+        self.btn_modifier.setEnabled(bool(posts))
+        self.btn_supprimer.setEnabled(bool(posts))
+
+    def _post_selectionne(self) -> dict | None:
+        item = self.liste_posts.currentItem()
+        if item is None or item.data(Qt.UserRole) is None:
+            return None
+        return db.lire_post(self.donnees.conn, item.data(Qt.UserRole))
+
+    def _ajouter_post(self) -> None:
+        from .dialogues import DialoguePost
+        if DialoguePost(self.donnees.conn, self, event=self.element.source).exec():
+            self._apres_modif_posts()
+
+    def _modifier_post(self) -> None:
+        from .dialogues import DialoguePost
+        post = self._post_selectionne()
+        if post and DialoguePost(self.donnees.conn, self, event=self.element.source, post=post).exec():
+            self._apres_modif_posts()
+
+    def _supprimer_post(self) -> None:
+        post = self._post_selectionne()
+        if not post:
+            return
+        question = t("post_confirmer_suppr", reseau=t("reseau_" + post["reseau"]),
+                     date=date.fromisoformat(post["date"][:10]).strftime("%d/%m/%Y"))
+        if QMessageBox.question(self, t("post_titre"), question) == QMessageBox.Yes:
+            db.supprimer_post(self.donnees.conn, post["id"])
+            self._apres_modif_posts()
+
+    def _apres_modif_posts(self) -> None:
+        self.element.etat_post = db.etat_posts(self.donnees.conn).get(self.element.source["uid"])
+        self._remplir_posts()
+        self.posts_modifies.emit()
+
+    # -- affichage ----------------------------------------------------------
 
     def afficher(self, el: Element | None) -> None:
         self.element = el
         self.bouton.setText(t("details_modifier"))
         self.bouton.setVisible(bool(el and el.nature == "perso"))
+        self.bloc_posts.setVisible(bool(el and el.nature != "perso"))
+        if el and el.nature != "perso":
+            self._remplir_posts()
         if el is None:
             self.texte.setHtml(f"<p style='color:#777'>{html.escape(t('details_vide'))}</p>")
             return
@@ -216,6 +326,51 @@ class Changements(QWidget):
     def marquer_lu(self) -> None:
         db.ecrire_reglage(self.conn, "dernier_changement_vu", str(db.dernier_changement_id(self.conn)))
         self.remplir()
+
+    def _clic(self, item: QListWidgetItem) -> None:
+        if item.data(Qt.UserRole):
+            self.evenement_choisi.emit(item.data(Qt.UserRole))
+
+
+# --------------------------------------------------------------------------
+
+class APoster(QWidget):
+    """Rappel J-7 : événements des 7 prochains jours sans aucun post."""
+
+    evenement_choisi = Signal(str)
+    compteur_change = Signal(int)
+
+    def __init__(self, conn, parent=None):
+        super().__init__(parent)
+        self.conn = conn
+        self.evenements: list[dict] = []
+        self.liste = QListWidget()
+        self.liste.setWordWrap(True)
+        self.liste.setIconSize(QSize(12, 12))
+        self.liste.itemClicked.connect(self._clic)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.addWidget(self.liste)
+
+    def remplir(self) -> None:
+        aujourdhui = date.today()
+        self.evenements = db.a_poster(self.conn, aujourdhui)
+        self.liste.clear()
+        if not self.evenements:
+            item = QListWidgetItem(t("aposter_vide"))
+            item.setFlags(Qt.NoItemFlags)
+            self.liste.addItem(item)
+        for ev in self.evenements:
+            debut = cal.dt(ev["start"])
+            texte = (f"{ev['title']}\n{date_lisible(debut.date())}, {debut:%H:%M} — "
+                     f"{echeance(debut.date(), aujourdhui)}")
+            lieu = ", ".join(x for x in (ev.get("venue"), ev.get("city")) if x)
+            if lieu:
+                texte += f" — {lieu}"
+            item = QListWidgetItem(indicateur_icone(None), texte)
+            item.setData(Qt.UserRole, ev["uid"])
+            self.liste.addItem(item)
+        self.compteur_change.emit(len(self.evenements))
 
     def _clic(self, item: QListWidgetItem) -> None:
         if item.data(Qt.UserRole):
