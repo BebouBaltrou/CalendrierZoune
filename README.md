@@ -108,3 +108,38 @@ FR/DE, le code source (`source/`, exigé par la licence AGPL de PyMuPDF) et les 
 bibliothèques. Dans la version installée, les données sont dans `%LOCALAPPDATA%\MuseeZoune`
 (base vide au départ, remplie par la première synchronisation). La version de développement
 (`lancer.bat`) garde ses données dans `data/`.
+
+## Mises à jour automatiques (depuis la 1.2)
+
+Menu « ⋯ » > « Paramètres… » > « Mises à jour » :
+
+- **Automatiquement au lancement** (par défaut) : quelques secondes après l'ouverture,
+  l'application interroge `https://api.github.com/repos/BebouBaltrou/CalendrierZoune/releases/latest`
+  (sans jeton, en arrière-plan, en silence si pas d'internet). Si une version plus récente existe,
+  elle la télécharge, vérifie son empreinte SHA-256, puis propose « Redémarrer maintenant » ou
+  « Plus tard » (installation à la fermeture, active au lancement suivant).
+- **Manuellement** : le bouton « Rechercher les mises à jour » affiche la nouvelle version et ses
+  notes, et propose de l'installer.
+
+La version de développement (`lancer.bat`) affiche seulement l'information, sans rien installer.
+
+L'exe en cours ne peut pas être remplacé (PyInstaller relit le code dans l'exe à chaque import) :
+le nouveau contenu est préparé dans `Musee Zoune.maj` à côté du dossier de l'application, puis un
+script PowerShell attend la fermeture, échange les fichiers (anciens renommés en `.old`, retour
+arrière en cas d'échec) et relance si demandé. `%LOCALAPPDATA%\MuseeZoune` n'est jamais touché.
+Journal du script : `%TEMP%\MuseeZoune-maj.log`.
+
+### Publier une version
+
+1. Monter `VERSION` dans `musee_zoune/config.py`, puis `.venv\Scripts\python outils\construire_paquet.py`.
+2. Le script produit dans `dist/` :
+   - `MuseeZoune-<v>-windows.zip` (installation complète) ;
+   - `MuseeZoune-<v>-maj-depuis-<base>.zip` (mise à jour légère : seul l'exe a changé depuis
+     `<base>`, la plus ancienne version publiée compatible) ;
+   - un fichier `.sha256` pour chaque zip.
+3. Créer la release GitHub `v<v>` et y joindre **tous** ces fichiers (zips et `.sha256`).
+
+Si les bibliothèques ont changé (pas de mise à jour légère possible), le script le signale :
+ne joindre que le zip complet et son `.sha256`, et ajouter aux notes de la release la ligne
+`<!-- musee-zoune: installation-complete -->` (invisible sur GitHub). L'application téléchargera
+alors le zip complet et remplacera tout le dossier de l'application.

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from .. import config, db
+from .. import config, db, maj
 from ..sync import configurer_journal
 from .fenetre import FenetrePrincipale
 
@@ -40,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv if argv is None else argv)
     configurer_journal()
     sys.excepthook = _erreur_non_geree
+    if maj.appliquer_en_attente():
+        return 0  # une mise à jour préparée s'installe, l'application va se relancer
+    maj.nettoyer()
     app = QApplication(argv)
     app.setApplicationName("Musée Zoune")
     app.setStyle("Fusion")
@@ -49,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
     fenetre.show()
     if "--autotest" in argv:
         _autotest(app, fenetre, Path(argv[argv.index("--autotest") + 1]))
+    else:
+        fenetre.maj.demarrage()  # mode automatique : vérification quelques secondes après l'ouverture
     code = app.exec()
     conn.close()
     return code

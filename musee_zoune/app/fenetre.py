@@ -21,6 +21,7 @@ from .barre_laterale import BarreLaterale
 from .dialogues import DialoguePerso, DialoguePost, ListePerso
 from .donnees import Donnees, Element, noter_notification, notification_a_faire
 from .panneaux import APoster, Changements, Details, ListePosts
+from .parametres import DialogueParametres, GestionMaj
 from .vue_mois import VueMois
 from .vue_semaine import VueSemaine
 
@@ -204,6 +205,7 @@ class FenetrePrincipale(QMainWindow):
         self.liste_posts.modifier_post.connect(self.modifier_post)
         self.liste_posts.posts_modifies.connect(self._posts_modifies)
         self.icone_notif = self._icone_notification()
+        self.maj = GestionMaj(self, conn)  # vérification au lancement : voir __main__.main
 
         self._barre_defilement_mois()
         self.retraduire()
@@ -292,6 +294,7 @@ class FenetrePrincipale(QMainWindow):
         self.act_compression = self.menu_plus.addAction("", self._compression)
         self.act_export = self.menu_plus.addAction("", self._export_pdf)
         self.menu_plus.addSeparator()
+        self.act_parametres = self.menu_plus.addAction("", self._parametres)
         self.act_a_propos = self.menu_plus.addAction("", self._a_propos)
         self.btn_plus.setMenu(self.menu_plus)
 
@@ -326,6 +329,7 @@ class FenetrePrincipale(QMainWindow):
         self.act_perso.setText(t("perso_gerer"))
         self.act_compression.setText(t("comp_menu"))
         self.act_export.setText(t("export_menu"))
+        self.act_parametres.setText(t("param_menu"))
         self.act_a_propos.setText(t("a_propos"))
         self.act_fab_perso.setText(t("fab_perso"))
         self.act_fab_post.setText(t("fab_post"))
@@ -522,6 +526,9 @@ class FenetrePrincipale(QMainWindow):
         from .outils import DialogueCompression
         DialogueCompression(self).exec()
 
+    def _parametres(self) -> None:
+        DialogueParametres(self.maj, self).exec()
+
     def _a_propos(self) -> None:
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.about(self, t("a_propos"), t("a_propos_texte", version=config.VERSION,
@@ -600,6 +607,7 @@ class FenetrePrincipale(QMainWindow):
         return super().eventFilter(objet, ev)
 
     def closeEvent(self, ev):
+        self.maj.arreter()
         if self.fil and self.fil.isRunning():
             self.fil.wait(15000)
         super().closeEvent(ev)

@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-VERSION = "1.1"
+VERSION = "1.2"
 RACINE = Path(__file__).resolve().parent.parent
 
 
@@ -26,6 +26,17 @@ def dossier_donnees() -> Path:
 DOSSIER_DONNEES = dossier_donnees()
 CHEMIN_BASE = DOSSIER_DONNEES / "musee.db"
 CHEMIN_JOURNAL = DOSSIER_DONNEES / "sync.log"
+
+# Mises à jour : dernière release publiée sur GitHub (API publique, sans jeton).
+# MUSEE_ZOUNE_URL_MAJ permet de viser un faux serveur de releases (tests).
+DEPOT_GITHUB = "BebouBaltrou/CalendrierZoune"
+URL_MAJ = os.environ.get("MUSEE_ZOUNE_URL_MAJ") or f"https://api.github.com/repos/{DEPOT_GITHUB}/releases/latest"
+
+
+def est_installee() -> bool:
+    """Vrai pour l'exécutable Windows, faux pour la version de développement (lancer.bat)."""
+    return bool(getattr(sys, "frozen", False))
+
 
 SITE = "https://www.blmk.de"
 URL_CALENDRIER = f"{SITE}/kalender/"

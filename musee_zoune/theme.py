@@ -178,6 +178,13 @@ def feuille_de_style(th: Theme = SOMBRE) -> str:
         width: 16px; height: 16px; border: 2px solid {th.texte_secondaire}; border-radius: 3px;
     }}
     QCheckBox::indicator:checked {{ background: {COULEUR_ACCENT}; border-color: {COULEUR_ACCENT}; }}
+    QRadioButton {{ spacing: 8px; }}
+    QRadioButton::indicator {{
+        width: 12px; height: 12px; border: 2px solid {th.texte_secondaire}; border-radius: 8px;
+    }}
+    QRadioButton::indicator:checked {{
+        background: {COULEUR_ACCENT}; border: 2px solid {COULEUR_ACCENT};
+    }}
     QDialog {{ background: #2D2E31; }}
     QDialog QWidget {{ background: #2D2E31; }}
     QDialog QLineEdit, QDialog QTextEdit, QDialog QSpinBox, QDialog QComboBox,
